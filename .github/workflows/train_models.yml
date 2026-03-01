@@ -27,7 +27,7 @@ on:
 jobs:
   train:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repo
@@ -142,39 +142,6 @@ jobs:
                   commit_message=f"[auto] DQN weights + data — start_year=${{ github.event.inputs.start_year }}",
               )
               print(f"Pushed {len(ops)} files to HF Dataset")
-          EOF
-
-      - name: Push code + results to HF Space
-        env:
-          HF_TOKEN:      ${{ secrets.HF_TOKEN }}
-          HF_SPACE_REPO: ${{ secrets.HF_SPACE_REPO }}
-        run: |
-          python - <<'EOF'
-          import os
-          from huggingface_hub import HfApi, CommitOperationAdd
-
-          HF_TOKEN      = os.getenv("HF_TOKEN", "")
-          HF_SPACE_REPO = os.getenv("HF_SPACE_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE")
-
-          api = HfApi(token=HF_TOKEN)
-          space_files = [
-              "app.py", "config.py", "features.py", "env.py",
-              "agent.py", "train.py", "evaluate.py", "predict.py",
-              "data_download.py", "requirements.txt",
-              "evaluation_results.json",
-              "latest_prediction.json",
-              "models/training_summary.json",
-          ]
-          ops = [CommitOperationAdd(path_in_repo=f, path_or_fileobj=f)
-                 for f in space_files if os.path.exists(f)]
-          if ops:
-              api.create_commit(
-                  repo_id=HF_SPACE_REPO,
-                  repo_type="space",
-                  operations=ops,
-                  commit_message="[auto] Deploy DQN code + results to HF Space",
-              )
-              print(f"Pushed {len(ops)} files to HF Space")
           EOF
 
       - name: Commit results to GitHub

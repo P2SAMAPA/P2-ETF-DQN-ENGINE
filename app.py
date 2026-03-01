@@ -82,7 +82,6 @@ def _trigger_github(start_year: int, episodes: int, fee_bps: int,
         import requests
         token = config.GITHUB_TOKEN if hasattr(config, "GITHUB_TOKEN") else os.getenv("GITHUB_TOKEN", "")
         if not token:
-            st.error("❌ Debug: GITHUB_TOKEN is empty — check HF Space secrets.")
             return False
         url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/train_models.yml/dispatches"
         resp = requests.post(url,
@@ -91,18 +90,14 @@ def _trigger_github(start_year: int, episodes: int, fee_bps: int,
             json={"ref": "main",
                   "inputs": {
                       "start_year": str(start_year),
-                      "episodes":   str(episodes),
                       "fee_bps":    str(fee_bps),
                       "tsl_pct":    str(tsl_pct),
                       "z_reentry":  str(z_reentry),
                   }},
             timeout=10,
         )
-        if resp.status_code != 204:
-            st.error(f"❌ Debug: GitHub API returned HTTP {resp.status_code} — {resp.text[:300]}")
         return resp.status_code == 204
-    except Exception as e:
-        st.error(f"❌ Debug: Exception triggering GitHub Actions — {str(e)}")
+    except Exception:
         return False
 
 

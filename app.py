@@ -76,12 +76,13 @@ def _next_trading_day() -> date:
     return d
 
 
-def _trigger_github(start_year: int, episodes: int, fee_bps: int,
+def _trigger_github(start_year: int, fee_bps: int,
                     tsl_pct: float, z_reentry: float) -> bool:
     try:
         import requests
-        token = config.GITHUB_TOKEN if hasattr(config, "GITHUB_TOKEN") else os.getenv("GITHUB_TOKEN", "")
+        token = os.getenv("GITHUB_TOKEN", "")
         if not token:
+            st.error("❌ GITHUB_TOKEN not found in Space secrets.")
             return False
         url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/train_models.yml/dispatches"
         resp = requests.post(url,
@@ -90,15 +91,17 @@ def _trigger_github(start_year: int, episodes: int, fee_bps: int,
             json={"ref": "main",
                   "inputs": {
                       "start_year": str(start_year),
-                      "episodes":   str(episodes),
                       "fee_bps":    str(fee_bps),
                       "tsl_pct":    str(tsl_pct),
                       "z_reentry":  str(z_reentry),
                   }},
             timeout=10,
         )
+        if resp.status_code != 204:
+            st.error(f"❌ GitHub API returned HTTP {resp.status_code} — {resp.text[:300]}")
         return resp.status_code == 204
-    except Exception:
+    except Exception as e:
+        st.error(f"❌ Exception: {str(e)}")
         return False
 
 
@@ -134,7 +137,7 @@ with st.sidebar:
                         use_container_width=True)
 
     if run_btn:
-        triggered = _trigger_github(start_year, episodes, fee_bps, tsl_pct, z_reentry)
+        triggered = _trigger_github(start_year, fee_bps, tsl_pct, z_reentry)
         if triggered:
             st.success(
                 f"✅ Training triggered!\n\n"

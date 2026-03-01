@@ -85,7 +85,7 @@ jobs:
         run: |
           python train.py \
             --start_year "${{ github.event.inputs.start_year || '2015' }}" \
-            --episodes   "${{ github.event.inputs.episodes   || '300'  }}" \
+            --episodes   "${{ github.event.inputs.episodes   || '100'  }}" \
             --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}"
 
       - name: Run evaluation

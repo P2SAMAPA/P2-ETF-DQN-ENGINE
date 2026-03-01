@@ -65,33 +65,6 @@ jobs:
           FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
         run: python predict.py
 
-      - name: Push prediction to HF Space
-        env:
-          HF_TOKEN:      ${{ secrets.HF_TOKEN }}
-          HF_SPACE_REPO: ${{ secrets.HF_SPACE_REPO }}
-        run: |
-          python - <<'EOF'
-          import os
-          from huggingface_hub import HfApi, CommitOperationAdd
-
-          HF_TOKEN      = os.getenv("HF_TOKEN", "")
-          HF_SPACE_REPO = os.getenv("HF_SPACE_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE")
-
-          api = HfApi(token=HF_TOKEN)
-          ops = []
-          if os.path.exists("latest_prediction.json"):
-              ops.append(CommitOperationAdd(
-                  path_in_repo="latest_prediction.json",
-                  path_or_fileobj="latest_prediction.json"))
-          if ops:
-              api.create_commit(
-                  repo_id=HF_SPACE_REPO,
-                  repo_type="space",
-                  operations=ops,
-                  commit_message="[auto] Daily prediction update",
-              )
-          EOF
-
       - name: Commit prediction to GitHub
         run: |
           git config user.name  "github-actions[bot]"

@@ -112,11 +112,17 @@ def run_backtest(start_year: int,
     test_dates = feat_df.index[
         int(len(feat_df) * (config.TRAIN_SPLIT + config.VAL_SPLIT)):
     ]
-    bench = {}
+    bench        = {}
+    bench_ann    = {}
+    bench_equity = {}
     for b in config.BENCHMARKS:
         if b in etf_prices.columns:
             bp = etf_prices[b].reindex(test_dates).ffill().pct_change().dropna()
-            bench[b] = _sharpe(bp.values)
+            bench[b]        = _sharpe(bp.values)
+            cum             = float((1 + bp).prod())
+            bench_ann[b]    = round(float(cum ** (252 / max(len(bp), 1)) - 1), 4)
+            beq             = (1 + bp).cumprod().values
+            bench_equity[b] = [round(float(v / beq[0]), 4) for v in beq]
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     n_days  = len(rets)
@@ -140,6 +146,9 @@ def run_backtest(start_year: int,
         hit_ratio        = round(hit,     4),
         final_equity     = round(float(equity[-1]), 4),
         benchmark_sharpe = {k: round(v, 4) for k, v in bench.items()},
+        benchmark_ann    = bench_ann,
+        benchmark_equity = bench_equity,
+        test_dates       = [str(d.date()) for d in test_dates],
         allocation_pct   = {k: round(v, 4) for k, v in alloc_counts.items()},
         equity_curve     = [round(float(e), 4) for e in equity],
         allocations      = allocations,

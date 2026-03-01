@@ -3,7 +3,7 @@
 import json
 import os
 import shutil
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -58,60 +58,31 @@ def _load_json(path: str) -> dict:
 
 
 def _next_trading_day() -> date:
-    """Uses NYSE calendar via pandas_market_calendars — no hardcoded holidays."""
-    try:
-        import pandas_market_calendars as mcal
-        nyse    = mcal.get_calendar("NYSE")
-        now_est = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
-        today   = now_est.date()
-        sched   = nyse.schedule(
-            start_date=today.strftime("%Y-%m-%d"),
-            end_date=(today + timedelta(days=10)).strftime("%Y-%m-%d"),
-        )
-        trading_dates = [d.date() for d in mcal.date_range(sched, frequency="1D")]
-        if trading_dates and trading_dates[0] == today and now_est.hour < 16:
-            return today
-        for d in trading_dates:
-            if d > today:
-                return d
-    except Exception:
-        pass
-    now_est = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
-    d = now_est.date()
-    if now_est.hour >= 16 or d.weekday() >= 5:
-        d += timedelta(days=1)
-    while d.weekday() >= 5:
+    US_HOLIDAYS = {
+        date(2025,1,1), date(2025,1,20), date(2025,2,17), date(2025,4,18),
+        date(2025,5,26), date(2025,6,19), date(2025,7,4), date(2025,9,1),
+        date(2025,11,27), date(2025,12,25),
+        date(2026,1,1), date(2026,1,19), date(2026,2,16), date(2026,4,3),
+        date(2026,5,25), date(2026,6,19), date(2026,7,3), date(2026,9,7),
+        date(2026,11,26), date(2026,12,25),
+    }
+    now_est = datetime.utcnow() - timedelta(hours=5)
+    today   = now_est.date()
+    if today.weekday() < 5 and today not in US_HOLIDAYS and now_est.hour < 16:
+        return today
+    d = today + timedelta(days=1)
+    while d.weekday() >= 5 or d in US_HOLIDAYS:
         d += timedelta(days=1)
     return d
 
 
-def _trigger_github(start_year: int, fee_bps: int,
+def _trigger_github(start_year: int, episodes: int, fee_bps: int,
                     tsl_pct: float, z_reentry: float) -> bool:
     try:
         import requests
         token = config.GITHUB_TOKEN if hasattr(config, "GITHUB_TOKEN") else os.getenv("GITHUB_TOKEN", "")
         if not token:
-            st.error("❌ Debug: GITHUB_TOKEN is empty — check HF Space secrets.")
             return False
-        url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/train_models.yml/dispatches"
-        resp = requests.post(url,
-            headers={"Authorization": f"token {token}",
-                     "Accept": "application/vnd.github+json"},
-            json={"ref": "main",
-                  "inputs": {
-                      "start_year": str(start_year),
-                      "fee_bps":    str(fee_bps),
-                      "tsl_pct":    str(tsl_pct),
-                      "z_reentry":  str(z_reentry),
-                  }},
-            timeout=10,
-        )
-        if resp.status_code != 204:
-            st.error(f"❌ Debug: GitHub API returned HTTP {resp.status_code} — {resp.text[:300]}")
-        return resp.status_code == 204
-    except Exception as e:
-        st.error(f"❌ Debug: Exception — {str(e)}")
-        return False
         url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/train_models.yml/dispatches"
         resp = requests.post(url,
             headers={"Authorization": f"token {token}",
@@ -147,6 +118,7 @@ with st.sidebar:
 
     start_year = st.slider("Start Year", config.START_YEAR_MIN if hasattr(config, "START_YEAR_MIN") else 2008,
                            2024, 2015)
+    episodes   = st.number_input("Training Episodes", 100, 1000, 300, 50)
     fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10)
 
     st.divider()
@@ -162,24 +134,24 @@ with st.sidebar:
                         use_container_width=True)
 
     if run_btn:
-        triggered = _trigger_github(start_year, fee_bps, tsl_pct, z_reentry)
+        triggered = _trigger_github(start_year, episodes, fee_bps, tsl_pct, z_reentry)
         if triggered:
             st.success(
                 f"✅ Training triggered!\n\n"
-                f"Training from **{start_year}** · 250 episodes · **{fee_bps}bps** fees"
+                f"Training from **{start_year}** · **{episodes}** episodes · "
                 f"**{fee_bps}bps** fees\n\n"
-                f"Results update here in ~50–65 min."
+                f"Results update here in ~20–30 min."
             )
         else:
             st.warning(
                 "⚠️ Could not trigger GitHub Actions automatically.\n\n"
                 f"**Manual steps:**\n"
                 f"- Go to GitHub → Actions → Train DQN Agent\n"
-                f"- Set `start_year = {start_year}`\n"
+                f"- Set `start_year = {start_year}`, `episodes = {episodes}`\n"
                 f"- Or add `GITHUB_TOKEN` to HF Space secrets."
             )
 
-    st.caption(f"↑ Trains from {start_year} onwards · 250 episodes (hardcoded in train_models.yml)")
+    st.caption(f"↑ Trains from {start_year} onwards · {episodes} episodes")
 
 
 # ── Load outputs ──────────────────────────────────────────────────────────────
@@ -229,7 +201,7 @@ if tsl_triggered:
     </div>""", unsafe_allow_html=True)
 
 # ── Signal Hero Card ──────────────────────────────────────────────────────────
-now_est  = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
+now_est  = datetime.utcnow() - timedelta(hours=5)
 is_today = (next_td == now_est.date())
 td_label = "TODAY'S SIGNAL" if is_today else "NEXT TRADING DAY"
 
@@ -268,98 +240,49 @@ if evalu:
     c4.metric("Calmar Ratio",  f"{evalu.get('calmar', 0):.2f}")
     c5.metric("Hit Ratio",     f"{evalu.get('hit_ratio', 0):.1%}")
 
-    # Benchmark comparison — show annualised return
-    st.markdown("**Benchmark Comparison (Test Period)**")
-    try:
-        from data_download import load_local
-        bdata = load_local()
-        if bdata and "etf_prices" in bdata:
-            prices   = bdata["etf_prices"]
-            n_test   = evalu.get("n_test_days", 252)
-            bc1, bc2 = st.columns(2)
-            for col, b in zip([bc1, bc2], config.BENCHMARKS):
-                if b in prices.columns:
-                    bp      = prices[b].dropna()
-                    bp_test = bp.iloc[-n_test:]
-                    b_ret   = float((bp_test.iloc[-1] / bp_test.iloc[0]) - 1)
-                    b_ann   = float((1 + b_ret) ** (252 / max(len(bp_test), 1)) - 1)
-                    strat_ann = evalu.get("ann_return", 0)
-                    delta   = strat_ann - b_ann
-                    col.metric(f"{b} Ann. Return", f"{b_ann:.1%}",
-                               delta=f"{delta:+.1%} vs strategy")
-    except Exception:
-        bench = evalu.get("benchmark_sharpe", {})
-        if bench:
-            bc1, bc2 = st.columns(2)
-            for col, (k, v) in zip([bc1, bc2], bench.items()):
-                col.metric(f"{k} Sharpe", f"{v:.2f}")
+    # Benchmark comparison — ann return
+    bench_ann = evalu.get("benchmark_ann", {})
+    if bench_ann:
+        bc1, bc2  = st.columns(2)
+        strat_ann = evalu.get("ann_return", 0)
+        for col, (k, v) in zip([bc1, bc2], bench_ann.items()):
+            delta = strat_ann - v
+            col.metric(f"{k} Ann. Return", f"{v:.1%}",
+                       delta=f"{delta:+.1%} vs strategy")
 
 st.markdown("---")
 
 # ── Q-Value / Probability Bar Chart ──────────────────────────────────────────
 if probs:
-    st.subheader("📊 Agent Conviction — Action Probabilities")
+    st.subheader("📊 Action Probabilities (Softmax Q-Values)")
     actions = list(probs.keys())
     values  = [probs[a] for a in actions]
-    colours = ["#fd7e14" if a == "CASH" else
-               "#0066cc" if a == final_signal else "#adb5bd"
+    colours = ["#cc6600" if a == "CASH" else
+               "#0066cc" if a == final_signal else "#6c757d"
                for a in actions]
-    text_colours = ["#ffffff" for _ in actions]
 
     fig = go.Figure(go.Bar(
         x=actions, y=values,
-        marker=dict(
-            color=colours,
-            line=dict(color=["#cc5500" if a == "CASH" else
-                             "#004499" if a == final_signal else "#6c757d"
-                             for a in actions], width=2)
-        ),
+        marker_color=colours,
         text=[f"{v:.1%}" for v in values],
         textposition="outside",
-        textfont=dict(size=12, color="#1a1a1a"),
-        cliponaxis=False,
     ))
     fig.update_layout(
-        paper_bgcolor="#f8f9fa", plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
         font_color="#1a1a1a",
-        yaxis_title="Probability",
-        xaxis_title="",
-        height=340,
-        margin=dict(t=10, b=10, l=50, r=20),
-        yaxis=dict(gridcolor="#dee2e6", tickformat=".0%",
-                   range=[0, max(values) * 1.3]),
-        xaxis=dict(tickfont=dict(size=13, color="#1a1a1a")),
-        bargap=0.35,
+        yaxis_title="Probability", xaxis_title="Action",
+        height=300, margin=dict(t=20, b=20),
+        yaxis=dict(gridcolor="#e9ecef"),
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(
-        "**How to read this chart:** Each bar shows the agent's probability of choosing "
-        "that action today, derived from softmax of the DQN's Q-values. "
-        "🔵 Blue = today's chosen action. 🟠 Orange = CASH. Grey = rejected actions. "
-        "A dominant single bar = high conviction. "
-        "Bars of similar height = agent is uncertain (low Z-score) — treat signal with caution."
-    )
 
 # ── Equity Curve ──────────────────────────────────────────────────────────────
 if evalu and "equity_curve" in evalu:
     st.subheader("📈 Test-Set Equity Curve vs Benchmarks")
-    st.caption("Normalised to 1.0 at start of test period (final 10% of data). "
-               "SPY and AGG shown for comparison.")
-    equity  = evalu["equity_curve"]
-    n       = len(equity)
-
-    # Build date index for X axis from price data
-    x_dates = None
-    try:
-        from data_download import load_local
-        d = load_local()
-        if d and "etf_prices" in d:
-            all_dates = d["etf_prices"].dropna(how="all").index
-            if len(all_dates) >= n:
-                x_dates = [str(dt.date()) for dt in all_dates[-n:]]
-    except Exception:
-        pass
-    x_axis = x_dates if x_dates else list(range(n))
+    st.caption("Normalised to 1.0 at start of test period. SPY and AGG shown for comparison.")
+    equity     = evalu["equity_curve"]
+    test_dates = evalu.get("test_dates", [])
+    x_axis     = test_dates if len(test_dates) == len(equity) else list(range(len(equity)))
 
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
@@ -367,28 +290,15 @@ if evalu and "equity_curve" in evalu:
         line=dict(color="#0066cc", width=2.5),
     ))
 
-    # SPY and AGG lines
+    # SPY and AGG from json — no load_local needed
+    bench_equity = evalu.get("benchmark_equity", {})
     bench_colours = {"SPY": "#e63946", "AGG": "#2a9d8f"}
-    try:
-        from data_download import load_local
-        d = load_local()
-        if d and "etf_prices" in d:
-            prices = d["etf_prices"]
-            for b in config.BENCHMARKS:
-                if b in prices.columns:
-                    bp    = prices[b].dropna()
-                    bp_n  = bp.iloc[-n:]
-                    brets = bp_n.pct_change().fillna(0)
-                    beq   = (1 + brets).cumprod().values
-                    beq   = beq / beq[0]
-                    bx    = [str(dt.date()) for dt in bp_n.index] if x_dates else list(range(len(beq)))
-                    fig2.add_trace(go.Scatter(
-                        x=bx, y=beq, mode="lines", name=b,
-                        line=dict(width=1.5, dash="dot",
-                                  color=bench_colours.get(b, "#888888")),
-                    ))
-    except Exception:
-        pass
+    for b, beq in bench_equity.items():
+        bx = test_dates if len(test_dates) == len(beq) else list(range(len(beq)))
+        fig2.add_trace(go.Scatter(
+            x=bx, y=beq, mode="lines", name=b,
+            line=dict(width=1.5, dash="dot", color=bench_colours.get(b, "#888888")),
+        ))
 
     fig2.update_layout(
         paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
@@ -398,53 +308,39 @@ if evalu and "equity_curve" in evalu:
         legend=dict(bgcolor="#f8f9fa", orientation="h",
                     yanchor="bottom", y=1.02, xanchor="left", x=0),
         yaxis=dict(gridcolor="#e9ecef", tickformat=".2f"),
-        xaxis=dict(type="category", tickangle=-45,
-                   nticks=12, gridcolor="#e9ecef"),
+        xaxis=dict(tickangle=-45, nticks=12, gridcolor="#e9ecef"),
         margin=dict(t=40, b=60),
     )
     st.plotly_chart(fig2, use_container_width=True)
 
 # ── Allocation Breakdown ──────────────────────────────────────────────────────
 if evalu and "allocation_pct" in evalu:
-    st.subheader("📊 Allocation Breakdown — Out-of-Sample Test Period")
-    alloc     = evalu["allocation_pct"]
-    n_test    = evalu.get("n_test_days", "?")
-    start_yr  = evalu.get("start_year", "?")
+    st.subheader("📊 Allocation Breakdown (Test Set)")
+    alloc = evalu["allocation_pct"]
     fig3  = go.Figure(go.Pie(
         labels=list(alloc.keys()),
         values=list(alloc.values()),
         hole=0.45,
         marker_colors=["#0066cc","#28a745","#ffc107","#fd7e14",
                        "#6f42c1","#e83e8c","#17a2b8","#adb5bd"],
-        textinfo="label+percent",
-        textfont=dict(size=13),
-        hovertemplate="<b>%{label}</b><br>%{percent} of test days<extra></extra>",
     ))
     fig3.update_layout(
         paper_bgcolor="#ffffff", font_color="#1a1a1a",
-        height=360, margin=dict(t=20, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.15),
+        height=320, margin=dict(t=20),
     )
     st.plotly_chart(fig3, use_container_width=True)
-    st.caption(
-        f"**What this shows:** Percentage of the {n_test} out-of-sample (OOS) test days "
-        f"the agent held each position. This is the final 10% of data from {start_yr} onwards — "
-        f"data the model never saw during training. "
-        "A well-trained agent rotates across multiple ETFs. "
-        "Heavy concentration in one slice (80%+) indicates the agent defaulted to a "
-        "single-asset strategy — a sign of poor learning or regime lock-in."
-    )
 
-# ── 15-Day Audit Trail ───────────────────────────────────────────────────────
+st.markdown("---")
+
+# ── 15-Day Audit Trail ────────────────────────────────────────────────────────
 if evalu and "allocations" in evalu and len(evalu["allocations"]) > 0:
     st.subheader("🗓️ 15-Day Audit Trail — Most Recent OOS Days")
-    st.caption("Last 15 trading days from the out-of-sample test period. "
-               "Shows daily allocation decision, return, and running equity.")
+    st.caption("Last 15 trading days from the out-of-sample test period.")
 
     allocs     = evalu["allocations"]
     eq_curve   = evalu.get("equity_curve", [])
+    test_dates = evalu.get("test_dates", [])
 
-    # Reconstruct daily returns from equity curve
     daily_rets = []
     if len(eq_curve) > 1:
         for i in range(1, len(eq_curve)):
@@ -452,35 +348,16 @@ if evalu and "allocations" in evalu and len(evalu["allocations"]) > 0:
 
     n_show      = min(15, len(allocs))
     last_allocs = allocs[-n_show:]
-    last_rets   = daily_rets[-n_show:] if daily_rets else [0.0] * n_show
-    last_equity = eq_curve[-n_show:]   if eq_curve   else [1.0] * n_show
+    last_rets   = daily_rets[-n_show:]   if daily_rets   else [0.0] * n_show
+    last_equity = eq_curve[-n_show:]     if eq_curve     else [1.0] * n_show
+    last_dates  = test_dates[-n_show:]   if len(test_dates) >= n_show else [f"Day {i+1}" for i in range(n_show)]
 
-    # Try to get actual dates
-    date_labels = [f"Day {i+1}" for i in range(n_show)]
-    try:
-        from data_download import load_local
-        d = load_local()
-        if d and "etf_prices" in d:
-            all_dates = d["etf_prices"].dropna(how="all").index
-            n_test    = evalu.get("n_test_days", len(allocs))
-            test_dates = all_dates[-n_test:]
-            if len(test_dates) >= n_show:
-                date_labels = [str(dt.date()) for dt in test_dates[-n_show:]]
-    except Exception:
-        pass
-
-    audit_rows = []
-    for i in range(n_show):
-        ret = last_rets[i] if i < len(last_rets) else 0.0
-        eq  = last_equity[i] if i < len(last_equity) else 1.0
-        audit_rows.append({
-            "Date"      : date_labels[i],
-            "Allocation": last_allocs[i],
-            "Daily Ret" : ret,
-            "Equity"    : eq,
-        })
-
-    audit_df = pd.DataFrame(audit_rows)
+    audit_df = pd.DataFrame({
+        "Date"      : last_dates,
+        "Allocation": last_allocs,
+        "Daily Ret" : last_rets,
+        "Equity"    : last_equity,
+    })
 
     def _colour_ret(val):
         color = "#d93025" if val < 0 else "#188038"
@@ -559,12 +436,7 @@ Best weights are saved by <b>validation-set Sharpe Ratio</b>. The agent uses
 <b>Double DQN</b> (online network selects action, frozen target network evaluates)
 to reduce Q-value overestimation — a known instability in financial RL applications.
 Experience replay buffer of 100k transitions; hard target network update every 500 steps;
-ε-greedy exploration decaying from 1.0 → 0.05 over the first 50% of training.
-Training runs for <b>250 episodes</b> (one episode = one full pass over the training set).
-<br><small style="color:#6c757d;">
-⚙️ To change episode count: edit <code>train_models.yml</code> in GitHub →
-find <code>--episodes "250"</code> in the <i>Train Dueling DQN Agent</i> step → update the number.
-</small></p>
+ε-greedy exploration decaying from 1.0 → 0.05 over the first 50% of training.</p>
 
 <h5 style="color:#0066cc;">Risk Controls</h5>
 <p>A post-signal <b>Trailing Stop Loss</b> overrides the DQN signal to CASH if the

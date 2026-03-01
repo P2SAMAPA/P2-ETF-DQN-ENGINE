@@ -1,14 +1,33 @@
-name: Daily Data Update
+name: Train DQN Agent
 
 on:
-  schedule:
-    - cron: "0 2 * * 1-5"
   workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Training data start year (e.g. 2015)"
+        required: false
+        default: "2015"
+      episodes:
+        description: "Training episodes"
+        required: false
+        default: "300"
+      fee_bps:
+        description: "Transaction fee in basis points"
+        required: false
+        default: "10"
+      tsl_pct:
+        description: "Trailing stop loss %"
+        required: false
+        default: "10"
+      z_reentry:
+        description: "Z-score re-entry threshold"
+        required: false
+        default: "1.1"
 
 jobs:
-  update:
+  train:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repo
@@ -23,14 +42,75 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run incremental data update
+      - name: Download latest data from HF Dataset
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import os, shutil
+          from huggingface_hub import hf_hub_download
+
+          HF_TOKEN        = os.getenv("HF_TOKEN", "")
+          HF_DATASET_REPO = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+
+          os.makedirs("data", exist_ok=True)
+          for f in ["etf_prices", "macro"]:
+              try:
+                  path = hf_hub_download(
+                      repo_id=HF_DATASET_REPO,
+                      filename=f"data/{f}.parquet",
+                      repo_type="dataset",
+                      token=HF_TOKEN,
+                  )
+                  shutil.copy(path, f"data/{f}.parquet")
+                  print(f"  ✓ data/{f}.parquet")
+              except Exception as e:
+                  print(f"  Warning: {f}: {e}")
+          EOF
+
+      - name: Incremental data update (catch up to today)
         env:
           FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
           HF_TOKEN:        ${{ secrets.HF_TOKEN }}
           HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
         run: python data_download.py --mode incremental
 
-      - name: Push updated data to HF Dataset
+      - name: Train Dueling DQN Agent
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python train.py \
+            --start_year "${{ github.event.inputs.start_year || '2015' }}" \
+            --episodes   "${{ github.event.inputs.episodes   || '300'  }}" \
+            --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}"
+
+      - name: Run evaluation
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python evaluate.py \
+            --start_year "${{ github.event.inputs.start_year || '2015' }}" \
+            --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}" \
+            --tsl        "${{ github.event.inputs.tsl_pct    || '10'   }}" \
+            --z          "${{ github.event.inputs.z_reentry  || '1.1'  }}"
+
+      - name: Run prediction
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python predict.py \
+            --tsl "${{ github.event.inputs.tsl_pct   || '10'  }}" \
+            --z   "${{ github.event.inputs.z_reentry  || '1.1' }}"
+
+      - name: Push weights + results to HF Dataset
         env:
           HF_TOKEN:        ${{ secrets.HF_TOKEN }}
           HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
@@ -42,30 +122,29 @@ jobs:
           HF_TOKEN        = os.getenv("HF_TOKEN", "")
           HF_DATASET_REPO = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
 
-          api   = HfApi(token=HF_TOKEN)
-          files = glob.glob("data/*.parquet")
-          ops   = [CommitOperationAdd(
-                      path_in_repo=f"data/{os.path.basename(f)}",
-                      path_or_fileobj=f)
-                   for f in files if os.path.exists(f)]
+          api  = HfApi(token=HF_TOKEN)
+          ops  = []
+
+          for f in glob.glob("data/*.parquet"):
+              ops.append(CommitOperationAdd(
+                  path_in_repo=f"data/{os.path.basename(f)}",
+                  path_or_fileobj=f))
+
+          for f in ["models/dqn_best.pt", "models/training_summary.json"]:
+              if os.path.exists(f):
+                  ops.append(CommitOperationAdd(path_in_repo=f, path_or_fileobj=f))
+
           if ops:
               api.create_commit(
                   repo_id=HF_DATASET_REPO,
                   repo_type="dataset",
                   operations=ops,
-                  commit_message=f"[auto] Daily data update",
+                  commit_message=f"[auto] DQN weights + data — start_year=${{ github.event.inputs.start_year }}",
               )
-              print(f"Pushed {len(ops)} parquet file(s) to HF Dataset")
+              print(f"Pushed {len(ops)} files to HF Dataset")
           EOF
 
-      - name: Run prediction with latest weights
-        env:
-          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-        run: python predict.py
-
-      - name: Push prediction to HF Space
+      - name: Push code + results to HF Space
         env:
           HF_TOKEN:      ${{ secrets.HF_TOKEN }}
           HF_SPACE_REPO: ${{ secrets.HF_SPACE_REPO }}
@@ -78,25 +157,38 @@ jobs:
           HF_SPACE_REPO = os.getenv("HF_SPACE_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE")
 
           api = HfApi(token=HF_TOKEN)
-          ops = []
-          if os.path.exists("latest_prediction.json"):
-              ops.append(CommitOperationAdd(
-                  path_in_repo="latest_prediction.json",
-                  path_or_fileobj="latest_prediction.json"))
+          space_files = [
+              "app.py", "config.py", "features.py", "env.py",
+              "agent.py", "train.py", "evaluate.py", "predict.py",
+              "data_download.py", "requirements.txt",
+              "evaluation_results.json",
+              "latest_prediction.json",
+              "models/training_summary.json",
+          ]
+          ops = [CommitOperationAdd(path_in_repo=f, path_or_fileobj=f)
+                 for f in space_files if os.path.exists(f)]
           if ops:
               api.create_commit(
                   repo_id=HF_SPACE_REPO,
                   repo_type="space",
                   operations=ops,
-                  commit_message="[auto] Daily prediction update",
+                  commit_message="[auto] Deploy DQN code + results to HF Space",
               )
+              print(f"Pushed {len(ops)} files to HF Space")
           EOF
 
-      - name: Commit prediction to GitHub
+      - name: Commit results to GitHub
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add latest_prediction.json || true
+          git add evaluation_results.json latest_prediction.json \
+                  models/training_summary.json 2>/dev/null || true
           git diff --cached --quiet || \
-            git commit -m "[auto] Daily prediction $(date -u +%Y-%m-%d)"
+            git commit -m "[auto] DQN results — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
           git push || true
+
+      - name: Done
+        run: |
+          echo "✅ DQN training pipeline complete."
+          echo "   start_year : ${{ github.event.inputs.start_year }}"
+          echo "   episodes   : ${{ github.event.inputs.episodes }}"

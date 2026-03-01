@@ -1,0 +1,36 @@
+{
+  "as_of_date": "2026-03-02",
+  "final_signal": "GLD",
+  "final_confidence": 0.2229,
+  "z_score": 1.023,
+  "q_values": {
+    "CASH": 3.9146,
+    "TLT": 4.1102,
+    "VCIT": 4.1065,
+    "LQD": 4.1136,
+    "HYG": 4.1116,
+    "VNQ": 4.094,
+    "GLD": 4.1788,
+    "SLV": 4.1753
+  },
+  "probabilities": {
+    "CASH": 0.0159,
+    "TLT": 0.1123,
+    "VCIT": 0.1082,
+    "LQD": 0.1161,
+    "HYG": 0.1138,
+    "VNQ": 0.0955,
+    "GLD": 0.2229,
+    "SLV": 0.2153
+  },
+  "tbill_rate": 3.6,
+  "tsl_status": {
+    "two_day_cumul_pct": 2.18,
+    "tsl_triggered": false,
+    "in_cash": false,
+    "z_reentry": 1.1,
+    "tsl_pct": 10.0
+  },
+  "trained_from_year": 2019,
+  "trained_at": "2026-03-01T15:38:16.968857"
+}

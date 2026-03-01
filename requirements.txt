@@ -1,0 +1,16 @@
+pandas
+numpy<2.0.0
+yfinance
+fredapi
+scikit-learn
+torch
+plotly
+streamlit
+huggingface_hub
+pyarrow
+python-dotenv
+ta
+tqdm
+requests
+pytz
+pandas_market_calendars

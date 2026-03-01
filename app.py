@@ -3,7 +3,7 @@
 import json
 import os
 import shutil
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -58,32 +58,20 @@ def _load_json(path: str) -> dict:
 
 
 def _next_trading_day() -> date:
-    """Uses NYSE calendar via pandas_market_calendars — no hardcoded holidays."""
-    try:
-        import pandas_market_calendars as mcal
-        nyse    = mcal.get_calendar("NYSE")
-        now_est = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
-        today   = now_est.date()
-        sched   = nyse.schedule(
-            start_date=today.strftime("%Y-%m-%d"),
-            end_date=(today + timedelta(days=10)).strftime("%Y-%m-%d"),
-        )
-        trading_dates = [d.date() for d in mcal.date_range(sched, frequency="1D")]
-        # If today is a trading day and market not yet closed, signal is for today
-        if trading_dates and trading_dates[0] == today and now_est.hour < 16:
-            return today
-        # Otherwise return next trading day
-        for d in trading_dates:
-            if d > today:
-                return d
-    except Exception:
-        pass
-    # Fallback: simple weekend skip (safe if mcal unavailable)
-    now_est = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
-    d = now_est.date()
-    if now_est.hour >= 16 or d.weekday() >= 5:
-        d += timedelta(days=1)
-    while d.weekday() >= 5:
+    US_HOLIDAYS = {
+        date(2025,1,1), date(2025,1,20), date(2025,2,17), date(2025,4,18),
+        date(2025,5,26), date(2025,6,19), date(2025,7,4), date(2025,9,1),
+        date(2025,11,27), date(2025,12,25),
+        date(2026,1,1), date(2026,1,19), date(2026,2,16), date(2026,4,3),
+        date(2026,5,25), date(2026,6,19), date(2026,7,3), date(2026,9,7),
+        date(2026,11,26), date(2026,12,25),
+    }
+    now_est = datetime.utcnow() - timedelta(hours=5)
+    today   = now_est.date()
+    if today.weekday() < 5 and today not in US_HOLIDAYS and now_est.hour < 16:
+        return today
+    d = today + timedelta(days=1)
+    while d.weekday() >= 5 or d in US_HOLIDAYS:
         d += timedelta(days=1)
     return d
 
@@ -94,6 +82,7 @@ def _trigger_github(start_year: int, episodes: int, fee_bps: int,
         import requests
         token = config.GITHUB_TOKEN if hasattr(config, "GITHUB_TOKEN") else os.getenv("GITHUB_TOKEN", "")
         if not token:
+            st.error("❌ Debug: GITHUB_TOKEN is empty — check HF Space secrets.")
             return False
         url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/train_models.yml/dispatches"
         resp = requests.post(url,
@@ -109,8 +98,11 @@ def _trigger_github(start_year: int, episodes: int, fee_bps: int,
                   }},
             timeout=10,
         )
+        if resp.status_code != 204:
+            st.error(f"❌ Debug: GitHub API returned HTTP {resp.status_code} — {resp.text[:300]}")
         return resp.status_code == 204
-    except Exception:
+    except Exception as e:
+        st.error(f"❌ Debug: Exception triggering GitHub Actions — {str(e)}")
         return False
 
 
@@ -130,7 +122,6 @@ with st.sidebar:
 
     start_year = st.slider("Start Year", config.START_YEAR_MIN if hasattr(config, "START_YEAR_MIN") else 2008,
                            2024, 2015)
-    episodes   = st.number_input("Training Episodes", 100, 1000, 300, 50)
     fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10)
 
     st.divider()
@@ -146,24 +137,24 @@ with st.sidebar:
                         use_container_width=True)
 
     if run_btn:
-        triggered = _trigger_github(start_year, episodes, fee_bps, tsl_pct, z_reentry)
+        triggered = _trigger_github(start_year, 200, fee_bps, tsl_pct, z_reentry)
         if triggered:
             st.success(
                 f"✅ Training triggered!\n\n"
-                f"Training from **{start_year}** · **{episodes}** episodes · "
+                f"Training from **{start_year}** · 200 episodes · "
                 f"**{fee_bps}bps** fees\n\n"
-                f"Results update here in ~20–30 min."
+                f"Results update here in ~45–60 min."
             )
         else:
             st.warning(
                 "⚠️ Could not trigger GitHub Actions automatically.\n\n"
                 f"**Manual steps:**\n"
                 f"- Go to GitHub → Actions → Train DQN Agent\n"
-                f"- Set `start_year = {start_year}`, `episodes = {episodes}`\n"
+                f"- Set `start_year = {start_year}`\n"
                 f"- Or add `GITHUB_TOKEN` to HF Space secrets."
             )
 
-    st.caption(f"↑ Trains from {start_year} onwards · {episodes} episodes")
+    st.caption(f"↑ Trains from {start_year} onwards · 200 episodes (hardcoded)")
 
 
 # ── Load outputs ──────────────────────────────────────────────────────────────
@@ -213,7 +204,7 @@ if tsl_triggered:
     </div>""", unsafe_allow_html=True)
 
 # ── Signal Hero Card ──────────────────────────────────────────────────────────
-now_est  = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
+now_est  = datetime.utcnow() - timedelta(hours=5)
 is_today = (next_td == now_est.date())
 td_label = "TODAY'S SIGNAL" if is_today else "NEXT TRADING DAY"
 

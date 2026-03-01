@@ -1,0 +1,424 @@
+# app.py — P2-ETF-DQN-ENGINE  Streamlit UI
+
+import json
+import os
+import shutil
+from datetime import datetime, date, timedelta
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+import config
+
+# ── Page config ───────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="P2 ETF DQN Engine",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown("""
+<style>
+.main { background-color: #0f0f0f; color: #e0e0e0; }
+div[data-testid="stMetric"] {
+    background: #1a1a2e; border: 1px solid #2d2d5e;
+    border-radius: 10px; padding: 15px;
+}
+[data-testid="stMetricValue"] { color: #00d4ff !important; font-size: 26px !important; font-weight: 700 !important; }
+[data-testid="stMetricLabel"] { color: #9090b0 !important; font-size: 11px !important; text-transform: uppercase; }
+.hero-card {
+    background: linear-gradient(135deg, #0d1b2a 0%, #1b2a3b 100%);
+    border: 2px solid #00d4ff; border-radius: 16px;
+    padding: 32px; text-align: center; margin-bottom: 24px;
+}
+.hero-label { color: #9090b0; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; }
+.hero-value { color: #00d4ff; font-size: 72px; font-weight: 900; margin: 8px 0; line-height: 1; }
+.hero-sub   { color: #c0c0d0; font-size: 14px; margin-top: 8px; }
+.cash-card  {
+    background: linear-gradient(135deg, #1a0a00 0%, #2a1500 100%);
+    border: 2px solid #ff6600; border-radius: 16px;
+    padding: 32px; text-align: center; margin-bottom: 24px;
+}
+.provenance { background: #1a1a2e; border-left: 4px solid #00d4ff; padding: 10px 16px;
+              border-radius: 4px; font-size: 13px; color: #9090b0; margin-top: 8px; }
+.method-box { background: #111122; border: 1px solid #2d2d5e; border-radius: 12px; padding: 20px; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _load_json(path: str) -> dict:
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def _next_trading_day() -> date:
+    US_HOLIDAYS = {
+        date(2025,1,1), date(2025,1,20), date(2025,2,17), date(2025,4,18),
+        date(2025,5,26), date(2025,6,19), date(2025,7,4), date(2025,9,1),
+        date(2025,11,27), date(2025,12,25),
+        date(2026,1,1), date(2026,1,19), date(2026,2,16), date(2026,4,3),
+        date(2026,5,25), date(2026,6,19), date(2026,7,3), date(2026,9,7),
+        date(2026,11,26), date(2026,12,25),
+    }
+    now_est = datetime.utcnow() - timedelta(hours=5)
+    today   = now_est.date()
+    if today.weekday() < 5 and today not in US_HOLIDAYS and now_est.hour < 16:
+        return today
+    d = today + timedelta(days=1)
+    while d.weekday() >= 5 or d in US_HOLIDAYS:
+        d += timedelta(days=1)
+    return d
+
+
+def _trigger_github(start_year: int, episodes: int, fee_bps: int,
+                    tsl_pct: float, z_reentry: float) -> bool:
+    try:
+        import requests
+        token = config.GITHUB_TOKEN if hasattr(config, "GITHUB_TOKEN") else os.getenv("GITHUB_TOKEN", "")
+        if not token:
+            return False
+        url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/train_models.yml/dispatches"
+        resp = requests.post(url,
+            headers={"Authorization": f"token {token}",
+                     "Accept": "application/vnd.github+json"},
+            json={"ref": "main",
+                  "inputs": {
+                      "start_year": str(start_year),
+                      "episodes":   str(episodes),
+                      "fee_bps":    str(fee_bps),
+                      "tsl_pct":    str(tsl_pct),
+                      "z_reentry":  str(z_reentry),
+                  }},
+            timeout=10,
+        )
+        return resp.status_code == 204
+    except Exception:
+        return False
+
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown("## ⚙️ Configuration")
+
+    if st.button("🔄 Refresh Data & Clear Cache"):
+        st.cache_data.clear()
+        st.toast("Cache cleared — reloading...")
+        st.rerun()
+
+    st.divider()
+    st.markdown("### 📅 Training Parameters")
+    st.caption("Changes here require retraining via GitHub Actions.")
+
+    start_year = st.slider("Start Year", config.START_YEAR_MIN if hasattr(config, "START_YEAR_MIN") else 2008,
+                           2024, 2015)
+    episodes   = st.number_input("Training Episodes", 100, 1000, 300, 50)
+    fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10)
+
+    st.divider()
+    st.markdown("### 🛡️ Risk Controls")
+    st.caption("Instant — no retraining needed.")
+
+    tsl_pct   = st.slider("Trailing Stop Loss (%)", 5.0, 25.0, 10.0, 0.5)
+    z_reentry = st.slider("Re-entry Z-Score Threshold", 0.5, 3.0, 1.1, 0.1)
+
+    st.divider()
+    run_btn = st.button("🚀 Retrain DQN Agent",
+                        help="Triggers GitHub Actions training job",
+                        use_container_width=True)
+
+    if run_btn:
+        triggered = _trigger_github(start_year, episodes, fee_bps, tsl_pct, z_reentry)
+        if triggered:
+            st.success(
+                f"✅ Training triggered!\n\n"
+                f"Training from **{start_year}** · **{episodes}** episodes · "
+                f"**{fee_bps}bps** fees\n\n"
+                f"Results update here in ~20–30 min."
+            )
+        else:
+            st.warning(
+                "⚠️ Could not trigger GitHub Actions automatically.\n\n"
+                f"**Manual steps:**\n"
+                f"- Go to GitHub → Actions → Train DQN Agent\n"
+                f"- Set `start_year = {start_year}`, `episodes = {episodes}`\n"
+                f"- Or add `GITHUB_TOKEN` to HF Space secrets."
+            )
+
+    st.caption(f"↑ Trains from {start_year} onwards · {episodes} episodes")
+
+
+# ── Load outputs ──────────────────────────────────────────────────────────────
+pred  = _load_json("latest_prediction.json")
+evalu = _load_json("evaluation_results.json")
+
+next_td          = _next_trading_day()
+final_signal     = pred.get("final_signal", "—")
+z_score          = pred.get("z_score", 0.0)
+confidence       = pred.get("confidence", pred.get("final_confidence", 0.0))
+tsl_stat         = pred.get("tsl_status", {})
+tbill_rt         = pred.get("tbill_rate", 3.6)
+probs            = pred.get("probabilities", {})
+q_vals           = pred.get("q_values", {})
+trained_from_year= pred.get("trained_from_year")
+trained_at       = pred.get("trained_at")
+in_cash          = tsl_stat.get("in_cash", False)
+tsl_triggered    = tsl_stat.get("tsl_triggered", False)
+two_day_ret      = tsl_stat.get("two_day_cumul_pct", 0.0)
+
+# ── Header ────────────────────────────────────────────────────────────────────
+st.title("🤖 P2 ETF DQN Engine")
+st.caption("Dueling Deep Q-Network · Multi-Asset ETF Selection · arXiv:2411.07585")
+
+# ── Provenance banner ─────────────────────────────────────────────────────────
+if trained_from_year and trained_at:
+    trained_date = trained_at[:10]
+    st.markdown(
+        f'<div class="provenance">📋 Active model trained from '
+        f'<b>{trained_from_year}</b> · Generated <b>{trained_date}</b> · '
+        f'Val Sharpe <b>{evalu.get("sharpe", "—")}</b></div>',
+        unsafe_allow_html=True
+    )
+else:
+    st.info("⚠️ No trained model found. Click **🚀 Retrain DQN Agent** to train.")
+
+st.markdown("---")
+
+# ── TSL override banner ───────────────────────────────────────────────────────
+if tsl_triggered:
+    st.markdown(f"""
+    <div style="background:#1a0a00;border:2px solid #ff6600;border-radius:10px;
+                padding:16px;margin-bottom:16px;">
+      🔴 <b>TRAILING STOP LOSS TRIGGERED</b> — 2-day return
+      ({float(two_day_ret):+.1f}%) breached −{tsl_pct:.0f}% threshold.
+      Holding CASH @ {tbill_rt:.2f}% T-bill until Z ≥ {z_reentry:.1f}σ.
+    </div>""", unsafe_allow_html=True)
+
+# ── Signal Hero Card ──────────────────────────────────────────────────────────
+now_est  = datetime.utcnow() - timedelta(hours=5)
+is_today = (next_td == now_est.date())
+td_label = "TODAY'S SIGNAL" if is_today else "NEXT TRADING DAY"
+
+if in_cash or not pred:
+    st.markdown(f"""
+    <div class="cash-card">
+      <div class="hero-label">⚠️ Risk Override Active · {td_label}</div>
+      <div class="hero-value" style="color:#ff6600;">💵 CASH</div>
+      <div class="hero-sub">
+        Earning 3m T-bill: <b>{tbill_rt:.2f}% p.a.</b> &nbsp;|&nbsp;
+        Re-entry when Z ≥ {z_reentry:.1f}σ
+      </div>
+    </div>""", unsafe_allow_html=True)
+else:
+    prov_str = ""
+    if trained_from_year and trained_at:
+        prov_str = (f"📋 Trained from {trained_from_year} · "
+                    f"Generated {trained_at[:10]} · Z-Score {z_score:.2f}σ")
+    st.markdown(f"""
+    <div class="hero-card">
+      <div class="hero-label">Dueling DQN · {td_label}</div>
+      <div class="hero-value">{final_signal}</div>
+      <div class="hero-sub">
+        🎯 {next_td} &nbsp;|&nbsp; Confidence {float(confidence):.1%}
+        &nbsp;|&nbsp; Z-Score {float(z_score):.2f}σ
+      </div>
+      {"<div class='hero-sub' style='margin-top:6px;font-size:12px;opacity:0.7;'>" + prov_str + "</div>" if prov_str else ""}
+    </div>""", unsafe_allow_html=True)
+
+# ── Key Metrics ───────────────────────────────────────────────────────────────
+if evalu:
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Ann. Return",   f"{evalu.get('ann_return', 0):.1%}")
+    c2.metric("Sharpe Ratio",  f"{evalu.get('sharpe', 0):.2f}")
+    c3.metric("Max Drawdown",  f"{evalu.get('max_drawdown', 0):.1%}")
+    c4.metric("Calmar Ratio",  f"{evalu.get('calmar', 0):.2f}")
+    c5.metric("Hit Ratio",     f"{evalu.get('hit_ratio', 0):.1%}")
+
+    # Benchmark comparison
+    bench = evalu.get("benchmark_sharpe", {})
+    if bench:
+        bc1, bc2 = st.columns(2)
+        for col, (k, v) in zip([bc1, bc2], bench.items()):
+            delta = evalu.get("sharpe", 0) - v
+            col.metric(f"{k} Sharpe (benchmark)", f"{v:.2f}",
+                       delta=f"{delta:+.2f} vs strategy")
+
+st.markdown("---")
+
+# ── Q-Value / Probability Bar Chart ──────────────────────────────────────────
+if probs:
+    st.subheader("📊 Action Probabilities (Softmax Q-Values)")
+    actions = list(probs.keys())
+    values  = [probs[a] for a in actions]
+    colours = ["#ff6600" if a == "CASH" else
+               "#00d4ff" if a == final_signal else "#334466"
+               for a in actions]
+
+    fig = go.Figure(go.Bar(
+        x=actions, y=values,
+        marker_color=colours,
+        text=[f"{v:.1%}" for v in values],
+        textposition="outside",
+    ))
+    fig.update_layout(
+        paper_bgcolor="#0f0f0f", plot_bgcolor="#0f0f0f",
+        font_color="#e0e0e0",
+        yaxis_title="Probability", xaxis_title="Action",
+        height=300, margin=dict(t=20, b=20),
+        yaxis=dict(gridcolor="#222244"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# ── Equity Curve ──────────────────────────────────────────────────────────────
+if evalu and "equity_curve" in evalu:
+    st.subheader("📈 Test-Set Equity Curve")
+    equity = evalu["equity_curve"]
+    n      = len(equity)
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        y=equity, mode="lines", name="DQN Strategy",
+        line=dict(color="#00d4ff", width=2),
+    ))
+
+    # SPY benchmark over same period (normalised)
+    try:
+        from data_download import load_local
+        d = load_local()
+        if d and "etf_prices" in d:
+            feat_df = d["etf_prices"]
+            for b in config.BENCHMARKS:
+                if b in feat_df.columns:
+                    bp = feat_df[b].dropna()
+                    start_i = max(0, len(bp) - n)
+                    brets   = bp.iloc[start_i:].pct_change().fillna(0)
+                    beq     = (1 + brets).cumprod().values
+                    beq     = beq / beq[0]
+                    fig2.add_trace(go.Scatter(
+                        y=beq, mode="lines", name=b,
+                        line=dict(width=1.5, dash="dot"),
+                    ))
+    except Exception:
+        pass
+
+    fig2.update_layout(
+        paper_bgcolor="#0f0f0f", plot_bgcolor="#0f0f0f",
+        font_color="#e0e0e0", height=380,
+        yaxis_title="Normalised Equity", xaxis_title="Test Days",
+        legend=dict(bgcolor="#111122"),
+        yaxis=dict(gridcolor="#222244"),
+        margin=dict(t=20),
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ── Allocation Breakdown ──────────────────────────────────────────────────────
+if evalu and "allocation_pct" in evalu:
+    st.subheader("📊 Allocation Breakdown (Test Set)")
+    alloc = evalu["allocation_pct"]
+    fig3  = go.Figure(go.Pie(
+        labels=list(alloc.keys()),
+        values=list(alloc.values()),
+        hole=0.45,
+        marker_colors=["#00d4ff","#00ff88","#ffcc00","#ff6600",
+                       "#aa44ff","#ff4488","#44aaff","#888888"],
+    ))
+    fig3.update_layout(
+        paper_bgcolor="#0f0f0f", font_color="#e0e0e0",
+        height=320, margin=dict(t=20),
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+
+st.markdown("---")
+
+# ── Methodology Section ───────────────────────────────────────────────────────
+st.subheader("🧠 Methodology")
+st.markdown("""
+<div class="method-box">
+
+<h4 style="color:#00d4ff;">Reinforcement Learning Framework — Dueling DQN</h4>
+
+<p>This engine implements a <b>Dueling Deep Q-Network (Dueling DQN)</b> for daily ETF
+selection, directly extending the RL framework proposed by
+<b>Yasin & Gill (2024)</b> — <i>"Reinforcement Learning Framework for Quantitative Trading"</i>,
+presented at the <b>ICAIF 2024 FM4TS Workshop</b>
+(<a href="https://arxiv.org/abs/2411.07585" style="color:#00d4ff;">arXiv:2411.07585</a>).</p>
+
+<h5 style="color:#00d4ff;">From the Paper → Our Implementation</h5>
+
+<p>The paper benchmarks DQN, PPO, and A2C agents on single-stock buy/sell decisions using
+20 technical indicators, finding that <b>DQN with MLP policy significantly outperforms
+policy-gradient methods</b> (PPO, A2C) on daily financial time-series, and that
+<b>higher learning rates</b> (lr = 0.001) produce the most profitable signals.</p>
+
+<p>We extend this methodology in three key ways:</p>
+
+<ol>
+<li><b>Multi-Asset Action Space:</b> Rather than binary buy/sell on a single asset,
+the agent selects from 8 discrete actions — CASH or one of 7 ETFs
+(TLT, VCIT, LQD, HYG, VNQ, GLD, SLV). This is fundamentally a harder problem than
+the paper's setup, requiring the agent to learn relative value across assets.</li>
+
+<li><b>Dueling Architecture</b> (Wang et al., 2016): We replace the paper's standard DQN
+with a <b>Dueling DQN</b>, which separates the Q-function into a state-value stream V(s)
+and an advantage stream A(s,a):
+<br><code>Q(s,a) = V(s) + A(s,a) − mean_a(A(s,a))</code><br>
+This is specifically more effective for multi-action spaces because it explicitly learns
+which state is valuable independent of which action to take — critical when TLT and VCIT
+have similar Q-values in a rate-falling regime.</li>
+
+<li><b>Macro State Augmentation:</b> The paper's state space uses only price-derived
+technical indicators. We add six FRED macro signals to the state:
+VIX, T10Y2Y (yield curve slope), TBILL_3M, DXY, Corp Spread, and HY Spread.
+These directly encode the macro regime that drives fixed-income and credit ETF selection.</li>
+</ol>
+
+<h5 style="color:#00d4ff;">State Space (per trading day)</h5>
+<p>20 technical indicators per ETF × 7 ETFs + 6 macro signals (+ z-scored variants),
+all computed over a rolling <b>20-day lookback window</b>. The flattened window is fed
+to the DQN as a single state vector. Indicators follow the paper exactly:
+RSI(14), MACD(12/26/9), Stochastic(14), CCI(20), ROC(10), CMO(14), Williams%R,
+ATR, Bollinger %B + Width, StochRSI, Ultimate Oscillator, Momentum(10),
+rolling returns at 1/5/10/21d, and 21d realised volatility.</p>
+
+<h5 style="color:#00d4ff;">Reward Function</h5>
+<p>Reward = excess daily return over 3m T-bill, minus transaction cost on switches,
+scaled by inverse 21d realised volatility to penalise drawdown-prone positions.
+This replaces the paper's raw P&L reward with a risk-adjusted signal aligned with
+Sharpe Ratio maximisation.</p>
+
+<h5 style="color:#00d4ff;">Training</h5>
+<p>Data split is 80/10/10 (train/val/test) from the user-selected start year to present.
+Best weights are saved by <b>validation-set Sharpe Ratio</b>. The agent uses
+<b>Double DQN</b> (online network selects action, frozen target network evaluates)
+to reduce Q-value overestimation — a known instability in financial RL applications.
+Experience replay buffer of 100k transitions; hard target network update every 500 steps;
+ε-greedy exploration decaying from 1.0 → 0.05 over the first 50% of training.</p>
+
+<h5 style="color:#00d4ff;">Risk Controls</h5>
+<p>A post-signal <b>Trailing Stop Loss</b> overrides the DQN signal to CASH if the
+2-day cumulative return of the held ETF breaches the configured threshold.
+Re-entry from CASH requires the DQN's best-action Z-score to clear the re-entry
+threshold, ensuring the model has recovered conviction before re-entering risk.</p>
+
+</div>
+""", unsafe_allow_html=True)
+
+# ── Reference ─────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="background:#0d1020;border:1px solid #2d2d5e;border-radius:8px;
+            padding:14px;font-size:12px;color:#9090b0;margin-top:8px;">
+<b>Reference:</b> Yasin, A.S. & Gill, P.S. (2024).
+<i>Reinforcement Learning Framework for Quantitative Trading.</i>
+arXiv:2411.07585 [q-fin.TR]. Accepted at ICAIF 2024 FM4TS Workshop.
+&nbsp;·&nbsp;
+<b>Dueling DQN:</b> Wang, Z. et al. (2016).
+<i>Dueling Network Architectures for Deep Reinforcement Learning.</i>
+ICML 2016.
+</div>
+""", unsafe_allow_html=True)

@@ -80,6 +80,20 @@ jobs:
                   print(f"  ✓ models/{f}")
               except Exception as e:
                   print(f"  Warning: models/{f}: {e}")
+
+          # Download result jsons from HF Dataset (source of truth after training)
+          for f in ["evaluation_results.json", "latest_prediction.json"]:
+              try:
+                  path = hf_hub_download(
+                      repo_id=HF_DATASET_REPO,
+                      filename=f"results/{f}",
+                      repo_type="dataset",
+                      token=HF_TOKEN,
+                  )
+                  shutil.copy(path, f)
+                  print(f"  ✓ {f} (from HF Dataset)")
+              except Exception as e:
+                  print(f"  Warning: {f}: {e}")
           EOF
 
       - name: Push code + results to HF Space

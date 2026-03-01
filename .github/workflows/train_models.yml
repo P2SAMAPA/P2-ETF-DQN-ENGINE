@@ -1,0 +1,189 @@
+name: Train DQN Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Training data start year (e.g. 2015)"
+        required: false
+        default: "2015"
+      episodes:
+        description: "Training episodes"
+        required: false
+        default: "300"
+      fee_bps:
+        description: "Transaction fee in basis points"
+        required: false
+        default: "10"
+      tsl_pct:
+        description: "Trailing stop loss %"
+        required: false
+        default: "10"
+      z_reentry:
+        description: "Z-score re-entry threshold"
+        required: false
+        default: "1.1"
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120    # DQN trains in ~20-30 min; 2hr ceiling is safe
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download latest data from HF Dataset
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import os, shutil
+          from huggingface_hub import hf_hub_download
+          import config
+
+          os.makedirs("data", exist_ok=True)
+          for f in ["etf_prices", "macro"]:
+              try:
+                  path = hf_hub_download(
+                      repo_id=config.HF_DATASET_REPO,
+                      filename=f"data/{f}.parquet",
+                      repo_type="dataset",
+                      token=config.HF_TOKEN,
+                  )
+                  shutil.copy(path, f"data/{f}.parquet")
+                  print(f"  ✓ data/{f}.parquet")
+              except Exception as e:
+                  print(f"  Warning: {f}: {e}")
+          EOF
+
+      - name: Incremental data update (catch up to today)
+        env:
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+        run: python data_download.py --mode incremental
+
+      - name: Train Dueling DQN Agent
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python train.py \
+            --start_year "${{ github.event.inputs.start_year || '2015' }}" \
+            --episodes   "${{ github.event.inputs.episodes   || '300'  }}" \
+            --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}"
+
+      - name: Run evaluation
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python evaluate.py \
+            --start_year "${{ github.event.inputs.start_year || '2015' }}" \
+            --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}" \
+            --tsl        "${{ github.event.inputs.tsl_pct    || '10'   }}" \
+            --z          "${{ github.event.inputs.z_reentry  || '1.1'  }}"
+
+      - name: Run prediction
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: |
+          python predict.py \
+            --tsl "${{ github.event.inputs.tsl_pct   || '10'  }}" \
+            --z   "${{ github.event.inputs.z_reentry  || '1.1' }}"
+
+      - name: Push weights + results to HF Dataset
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+        run: |
+          python - <<'EOF'
+          import os, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          import config
+
+          api  = HfApi(token=config.HF_TOKEN)
+          ops  = []
+
+          # Data parquets
+          for f in glob.glob("data/*.parquet"):
+              ops.append(CommitOperationAdd(
+                  path_in_repo=f"data/{os.path.basename(f)}",
+                  path_or_fileobj=f))
+
+          # Model weights + summary
+          for f in ["models/dqn_best.pt", "models/training_summary.json"]:
+              if os.path.exists(f):
+                  ops.append(CommitOperationAdd(path_in_repo=f, path_or_fileobj=f))
+
+          if ops:
+              api.create_commit(
+                  repo_id=config.HF_DATASET_REPO,
+                  repo_type="dataset",
+                  operations=ops,
+                  commit_message=f"[auto] DQN weights + data — start_year=${{ github.event.inputs.start_year }}",
+              )
+              print(f"Pushed {len(ops)} files to HF Dataset")
+          EOF
+
+      - name: Push code + results to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os
+          from huggingface_hub import HfApi, CommitOperationAdd
+          import config
+
+          api = HfApi(token=config.HF_TOKEN)
+          space_files = [
+              "app.py", "config.py", "features.py", "env.py",
+              "agent.py", "train.py", "evaluate.py", "predict.py",
+              "data_download.py", "requirements.txt",
+              "evaluation_results.json",
+              "latest_prediction.json",
+              "models/training_summary.json",
+          ]
+          ops = [CommitOperationAdd(path_in_repo=f, path_or_fileobj=f)
+                 for f in space_files if os.path.exists(f)]
+          if ops:
+              api.create_commit(
+                  repo_id=config.HF_SPACE_REPO,
+                  repo_type="space",
+                  operations=ops,
+                  commit_message="[auto] Deploy DQN code + results to HF Space",
+              )
+              print(f"Pushed {len(ops)} files to HF Space")
+          EOF
+
+      - name: Commit results to GitHub
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add evaluation_results.json latest_prediction.json \
+                  models/training_summary.json 2>/dev/null || true
+          git diff --cached --quiet || \
+            git commit -m "[auto] DQN results — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
+          git push || true
+
+      - name: Done
+        run: |
+          echo "✅ DQN training pipeline complete."
+          echo "   start_year : ${{ github.event.inputs.start_year }}"
+          echo "   episodes   : ${{ github.event.inputs.episodes }}"

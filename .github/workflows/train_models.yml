@@ -7,10 +7,6 @@ on:
         description: "Training data start year (e.g. 2015)"
         required: false
         default: "2015"
-      episodes:
-        description: "Training episodes"
-        required: false
-        default: "100"
       fee_bps:
         description: "Transaction fee in basis points"
         required: false
@@ -89,7 +85,7 @@ jobs:
         run: |
           python train.py \
             --start_year "${{ github.event.inputs.start_year || '2015' }}" \
-            --episodes   "${{ github.event.inputs.episodes   || '100'  }}" \
+            --episodes   "200" \
             --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}"
 
       - name: Run evaluation
@@ -167,4 +163,4 @@ jobs:
         run: |
           echo "✅ DQN training pipeline complete."
           echo "   start_year : ${{ github.event.inputs.start_year }}"
-          echo "   episodes   : ${{ github.event.inputs.episodes }}"
+          echo "   episodes   : 200 (hardcoded)"

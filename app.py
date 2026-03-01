@@ -21,29 +21,29 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.main { background-color: #0f0f0f; color: #e0e0e0; }
+.main { background-color: #ffffff; color: #1a1a1a; }
 div[data-testid="stMetric"] {
-    background: #1a1a2e; border: 1px solid #2d2d5e;
+    background: #f8f9fa; border: 1px solid #e9ecef;
     border-radius: 10px; padding: 15px;
 }
-[data-testid="stMetricValue"] { color: #00d4ff !important; font-size: 26px !important; font-weight: 700 !important; }
-[data-testid="stMetricLabel"] { color: #9090b0 !important; font-size: 11px !important; text-transform: uppercase; }
+[data-testid="stMetricValue"] { color: #0066cc !important; font-size: 26px !important; font-weight: 700 !important; }
+[data-testid="stMetricLabel"] { color: #6c757d !important; font-size: 11px !important; text-transform: uppercase; }
 .hero-card {
-    background: linear-gradient(135deg, #0d1b2a 0%, #1b2a3b 100%);
-    border: 2px solid #00d4ff; border-radius: 16px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 2px solid #0066cc; border-radius: 16px;
     padding: 32px; text-align: center; margin-bottom: 24px;
 }
-.hero-label { color: #9090b0; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; }
-.hero-value { color: #00d4ff; font-size: 72px; font-weight: 900; margin: 8px 0; line-height: 1; }
-.hero-sub   { color: #c0c0d0; font-size: 14px; margin-top: 8px; }
+.hero-label { color: #6c757d; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; }
+.hero-value { color: #0066cc; font-size: 72px; font-weight: 900; margin: 8px 0; line-height: 1; }
+.hero-sub   { color: #495057; font-size: 14px; margin-top: 8px; }
 .cash-card  {
-    background: linear-gradient(135deg, #1a0a00 0%, #2a1500 100%);
-    border: 2px solid #ff6600; border-radius: 16px;
+    background: linear-gradient(135deg, #fff8f0 0%, #ffe4cc 100%);
+    border: 2px solid #cc6600; border-radius: 16px;
     padding: 32px; text-align: center; margin-bottom: 24px;
 }
-.provenance { background: #1a1a2e; border-left: 4px solid #00d4ff; padding: 10px 16px;
-              border-radius: 4px; font-size: 13px; color: #9090b0; margin-top: 8px; }
-.method-box { background: #111122; border: 1px solid #2d2d5e; border-radius: 12px; padding: 20px; }
+.provenance { background: #f8f9fa; border-left: 4px solid #0066cc; padding: 10px 16px;
+              border-radius: 4px; font-size: 13px; color: #6c757d; margin-top: 8px; }
+.method-box { background: #ffffff; border: 1px solid #dee2e6; border-radius: 12px; padding: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -193,7 +193,7 @@ st.markdown("---")
 # ── TSL override banner ───────────────────────────────────────────────────────
 if tsl_triggered:
     st.markdown(f"""
-    <div style="background:#1a0a00;border:2px solid #ff6600;border-radius:10px;
+    <div style="background:#fff8f0;border:2px solid #cc6600;border-radius:10px;
                 padding:16px;margin-bottom:16px;">
       🔴 <b>TRAILING STOP LOSS TRIGGERED</b> — 2-day return
       ({float(two_day_ret):+.1f}%) breached −{tsl_pct:.0f}% threshold.
@@ -209,7 +209,7 @@ if in_cash or not pred:
     st.markdown(f"""
     <div class="cash-card">
       <div class="hero-label">⚠️ Risk Override Active · {td_label}</div>
-      <div class="hero-value" style="color:#ff6600;">💵 CASH</div>
+      <div class="hero-value" style="color:#cc6600;">💵 CASH</div>
       <div class="hero-sub">
         Earning 3m T-bill: <b>{tbill_rt:.2f}% p.a.</b> &nbsp;|&nbsp;
         Re-entry when Z ≥ {z_reentry:.1f}σ
@@ -256,8 +256,8 @@ if probs:
     st.subheader("📊 Action Probabilities (Softmax Q-Values)")
     actions = list(probs.keys())
     values  = [probs[a] for a in actions]
-    colours = ["#ff6600" if a == "CASH" else
-               "#00d4ff" if a == final_signal else "#334466"
+    colours = ["#cc6600" if a == "CASH" else
+               "#0066cc" if a == final_signal else "#6c757d"
                for a in actions]
 
     fig = go.Figure(go.Bar(
@@ -267,11 +267,11 @@ if probs:
         textposition="outside",
     ))
     fig.update_layout(
-        paper_bgcolor="#0f0f0f", plot_bgcolor="#0f0f0f",
-        font_color="#e0e0e0",
+        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
+        font_color="#1a1a1a",
         yaxis_title="Probability", xaxis_title="Action",
         height=300, margin=dict(t=20, b=20),
-        yaxis=dict(gridcolor="#222244"),
+        yaxis=dict(gridcolor="#e9ecef"),
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -284,7 +284,7 @@ if evalu and "equity_curve" in evalu:
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
         y=equity, mode="lines", name="DQN Strategy",
-        line=dict(color="#00d4ff", width=2),
+        line=dict(color="#0066cc", width=2),
     ))
 
     # SPY benchmark over same period (normalised)
@@ -308,11 +308,11 @@ if evalu and "equity_curve" in evalu:
         pass
 
     fig2.update_layout(
-        paper_bgcolor="#0f0f0f", plot_bgcolor="#0f0f0f",
-        font_color="#e0e0e0", height=380,
+        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
+        font_color="#1a1a1a", height=380,
         yaxis_title="Normalised Equity", xaxis_title="Test Days",
-        legend=dict(bgcolor="#111122"),
-        yaxis=dict(gridcolor="#222244"),
+        legend=dict(bgcolor="#f8f9fa"),
+        yaxis=dict(gridcolor="#e9ecef"),
         margin=dict(t=20),
     )
     st.plotly_chart(fig2, use_container_width=True)
@@ -325,11 +325,11 @@ if evalu and "allocation_pct" in evalu:
         labels=list(alloc.keys()),
         values=list(alloc.values()),
         hole=0.45,
-        marker_colors=["#00d4ff","#00ff88","#ffcc00","#ff6600",
-                       "#aa44ff","#ff4488","#44aaff","#888888"],
+        marker_colors=["#0066cc","#28a745","#ffc107","#fd7e14",
+                       "#6f42c1","#e83e8c","#17a2b8","#adb5bd"],
     ))
     fig3.update_layout(
-        paper_bgcolor="#0f0f0f", font_color="#e0e0e0",
+        paper_bgcolor="#ffffff", font_color="#1a1a1a",
         height=320, margin=dict(t=20),
     )
     st.plotly_chart(fig3, use_container_width=True)
@@ -341,15 +341,15 @@ st.subheader("🧠 Methodology")
 st.markdown("""
 <div class="method-box">
 
-<h4 style="color:#00d4ff;">Reinforcement Learning Framework — Dueling DQN</h4>
+<h4 style="color:#0066cc;">Reinforcement Learning Framework — Dueling DQN</h4>
 
 <p>This engine implements a <b>Dueling Deep Q-Network (Dueling DQN)</b> for daily ETF
 selection, directly extending the RL framework proposed by
 <b>Yasin & Gill (2024)</b> — <i>"Reinforcement Learning Framework for Quantitative Trading"</i>,
 presented at the <b>ICAIF 2024 FM4TS Workshop</b>
-(<a href="https://arxiv.org/abs/2411.07585" style="color:#00d4ff;">arXiv:2411.07585</a>).</p>
+(<a href="https://arxiv.org/abs/2411.07585" style="color:#0066cc;">arXiv:2411.07585</a>).</p>
 
-<h5 style="color:#00d4ff;">From the Paper → Our Implementation</h5>
+<h5 style="color:#0066cc;">From the Paper → Our Implementation</h5>
 
 <p>The paper benchmarks DQN, PPO, and A2C agents on single-stock buy/sell decisions using
 20 technical indicators, finding that <b>DQN with MLP policy significantly outperforms
@@ -378,7 +378,7 @@ VIX, T10Y2Y (yield curve slope), TBILL_3M, DXY, Corp Spread, and HY Spread.
 These directly encode the macro regime that drives fixed-income and credit ETF selection.</li>
 </ol>
 
-<h5 style="color:#00d4ff;">State Space (per trading day)</h5>
+<h5 style="color:#0066cc;">State Space (per trading day)</h5>
 <p>20 technical indicators per ETF × 7 ETFs + 6 macro signals (+ z-scored variants),
 all computed over a rolling <b>20-day lookback window</b>. The flattened window is fed
 to the DQN as a single state vector. Indicators follow the paper exactly:
@@ -386,13 +386,13 @@ RSI(14), MACD(12/26/9), Stochastic(14), CCI(20), ROC(10), CMO(14), Williams%R,
 ATR, Bollinger %B + Width, StochRSI, Ultimate Oscillator, Momentum(10),
 rolling returns at 1/5/10/21d, and 21d realised volatility.</p>
 
-<h5 style="color:#00d4ff;">Reward Function</h5>
+<h5 style="color:#0066cc;">Reward Function</h5>
 <p>Reward = excess daily return over 3m T-bill, minus transaction cost on switches,
 scaled by inverse 21d realised volatility to penalise drawdown-prone positions.
 This replaces the paper's raw P&L reward with a risk-adjusted signal aligned with
 Sharpe Ratio maximisation.</p>
 
-<h5 style="color:#00d4ff;">Training</h5>
+<h5 style="color:#0066cc;">Training</h5>
 <p>Data split is 80/10/10 (train/val/test) from the user-selected start year to present.
 Best weights are saved by <b>validation-set Sharpe Ratio</b>. The agent uses
 <b>Double DQN</b> (online network selects action, frozen target network evaluates)
@@ -400,7 +400,7 @@ to reduce Q-value overestimation — a known instability in financial RL applica
 Experience replay buffer of 100k transitions; hard target network update every 500 steps;
 ε-greedy exploration decaying from 1.0 → 0.05 over the first 50% of training.</p>
 
-<h5 style="color:#00d4ff;">Risk Controls</h5>
+<h5 style="color:#0066cc;">Risk Controls</h5>
 <p>A post-signal <b>Trailing Stop Loss</b> overrides the DQN signal to CASH if the
 2-day cumulative return of the held ETF breaches the configured threshold.
 Re-entry from CASH requires the DQN's best-action Z-score to clear the re-entry
@@ -411,8 +411,8 @@ threshold, ensuring the model has recovered conviction before re-entering risk.<
 
 # ── Reference ─────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style="background:#0d1020;border:1px solid #2d2d5e;border-radius:8px;
-            padding:14px;font-size:12px;color:#9090b0;margin-top:8px;">
+<div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;
+            padding:14px;font-size:12px;color:#6c757d;margin-top:8px;">
 <b>Reference:</b> Yasin, A.S. & Gill, P.S. (2024).
 <i>Reinforcement Learning Framework for Quantitative Trading.</i>
 arXiv:2411.07585 [q-fin.TR]. Accepted at ICAIF 2024 FM4TS Workshop.

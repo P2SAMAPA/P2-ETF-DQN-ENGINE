@@ -121,7 +121,6 @@ with st.sidebar:
 
     start_year = st.slider("Start Year", config.START_YEAR_MIN if hasattr(config, "START_YEAR_MIN") else 2008,
                            2024, 2015)
-    episodes   = st.number_input("Training Episodes", 100, 1000, 300, 50)
     fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10)
 
     st.divider()
@@ -141,20 +140,20 @@ with st.sidebar:
         if triggered:
             st.success(
                 f"✅ Training triggered!\n\n"
-                f"Training from **{start_year}** · **{episodes}** episodes · "
+                f"Training from **{start_year}** · 250 episodes · "
                 f"**{fee_bps}bps** fees\n\n"
-                f"Results update here in ~20–30 min."
+                f"Results update here in ~50–65 min."
             )
         else:
             st.warning(
                 "⚠️ Could not trigger GitHub Actions automatically.\n\n"
                 f"**Manual steps:**\n"
                 f"- Go to GitHub → Actions → Train DQN Agent\n"
-                f"- Set `start_year = {start_year}`, `episodes = {episodes}`\n"
+                f"- Set `start_year = {start_year}`\n"
                 f"- Or add `GITHUB_TOKEN` to HF Space secrets."
             )
 
-    st.caption(f"↑ Trains from {start_year} onwards · {episodes} episodes")
+    st.caption(f"↑ Trains from {start_year} onwards · 250 episodes (hardcoded in train_models.yml)")
 
 
 # ── Load outputs ──────────────────────────────────────────────────────────────
@@ -278,6 +277,11 @@ if probs:
         yaxis=dict(gridcolor="#e9ecef"),
     )
     st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "**How to read:** Each bar is the agent's probability of choosing that action today, "
+        "derived from softmax of the DQN Q-values. 🔵 Blue = chosen action. 🟠 Orange = CASH. "
+        "Grey = rejected. A dominant bar = high conviction. Similar-height bars = low conviction / uncertain signal."
+    )
 
 # ── Equity Curve ──────────────────────────────────────────────────────────────
 if evalu and "equity_curve" in evalu:
@@ -332,6 +336,11 @@ if evalu and "allocation_pct" in evalu:
         height=320, margin=dict(t=20),
     )
     st.plotly_chart(fig3, use_container_width=True)
+    st.caption(
+        "**How to read:** Percentage of out-of-sample (OOS) test days the agent held each position. "
+        "A well-trained agent rotates across ETFs. Heavy concentration in one slice (80%+) = "
+        "agent defaulted to a single-asset strategy — sign of poor learning."
+    )
 
 st.markdown("---")
 

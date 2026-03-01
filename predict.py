@@ -7,7 +7,7 @@ import argparse
 import json
 import os
 import shutil
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -21,20 +21,25 @@ WEIGHTS_PATH = os.path.join(config.MODELS_DIR, "dqn_best.pt")
 SUMMARY_PATH = os.path.join(config.MODELS_DIR, "training_summary.json")
 PRED_PATH    = "latest_prediction.json"
 
-US_HOLIDAYS = {
-    date(2025, 1, 1), date(2025, 1, 20), date(2025, 2, 17), date(2025, 4, 18),
-    date(2025, 5, 26), date(2025, 6, 19), date(2025, 7, 4), date(2025, 9, 1),
-    date(2025, 11, 27), date(2025, 12, 25),
-    date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16), date(2026, 4, 3),
-    date(2026, 5, 25), date(2026, 6, 19), date(2026, 7, 3), date(2026, 9, 7),
-    date(2026, 11, 26), date(2026, 12, 25),
-}
-
-
 def next_trading_day(from_date=None) -> date:
-    d = from_date or date.today()
-    d += timedelta(days=1)
-    while d.weekday() >= 5 or d in US_HOLIDAYS:
+    """Returns next NYSE trading day using pandas_market_calendars — no hardcoded holidays."""
+    try:
+        import pandas_market_calendars as mcal
+        nyse  = mcal.get_calendar("NYSE")
+        start = from_date or date.today()
+        sched = nyse.schedule(
+            start_date=start.strftime("%Y-%m-%d"),
+            end_date=(start + timedelta(days=14)).strftime("%Y-%m-%d"),
+        )
+        trading_dates = [d.date() for d in mcal.date_range(sched, frequency="1D")]
+        for d in trading_dates:
+            if d > start:
+                return d
+    except Exception:
+        pass
+    # Fallback: weekend skip only
+    d = (from_date or date.today()) + timedelta(days=1)
+    while d.weekday() >= 5:
         d += timedelta(days=1)
     return d
 
@@ -156,10 +161,20 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
 
     final_signal = "CASH" if in_cash else config.ACTIONS[best_idx]
 
-    # Signal date
-    now_est  = datetime.utcnow() - timedelta(hours=5)
+    # Signal date — use NYSE calendar
+    now_est  = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
     today    = now_est.date()
-    if today.weekday() < 5 and today not in US_HOLIDAYS and now_est.hour < 16:
+    try:
+        import pandas_market_calendars as mcal
+        nyse  = mcal.get_calendar("NYSE")
+        sched = nyse.schedule(
+            start_date=today.strftime("%Y-%m-%d"),
+            end_date=today.strftime("%Y-%m-%d"),
+        )
+        is_trading_day = not sched.empty
+    except Exception:
+        is_trading_day = today.weekday() < 5
+    if is_trading_day and now_est.hour < 16:
         signal_date = today
     else:
         signal_date = next_trading_day(today)

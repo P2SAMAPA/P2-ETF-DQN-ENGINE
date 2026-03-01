@@ -11,6 +11,7 @@ GITHUB_REPO     = "P2SAMAPA/P2-ETF-DQN-ENGINE"
 # ── API Keys ──────────────────────────────────────────────────────────────────
 HF_TOKEN        = os.getenv("HF_TOKEN", "")
 FRED_API_KEY    = os.getenv("FRED_API_KEY", "")
+GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN", "")
 
 # ── ETF Universe ──────────────────────────────────────────────────────────────
 ETFS            = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "GLD", "SLV"]

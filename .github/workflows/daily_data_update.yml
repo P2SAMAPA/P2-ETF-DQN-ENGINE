@@ -2,8 +2,8 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: "0 2 * * 1-5"   # 2:00 AM UTC Mon–Fri (after US market close)
-  workflow_dispatch:         # Allow manual trigger
+    - cron: "0 2 * * 1-5"
+  workflow_dispatch:
 
 jobs:
   update:
@@ -38,9 +38,11 @@ jobs:
           python - <<'EOF'
           import os, glob
           from huggingface_hub import HfApi, CommitOperationAdd
-          import config
 
-          api   = HfApi(token=config.HF_TOKEN)
+          HF_TOKEN        = os.getenv("HF_TOKEN", "")
+          HF_DATASET_REPO = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+
+          api   = HfApi(token=HF_TOKEN)
           files = glob.glob("data/*.parquet")
           ops   = [CommitOperationAdd(
                       path_in_repo=f"data/{os.path.basename(f)}",
@@ -48,7 +50,7 @@ jobs:
                    for f in files if os.path.exists(f)]
           if ops:
               api.create_commit(
-                  repo_id=config.HF_DATASET_REPO,
+                  repo_id=HF_DATASET_REPO,
                   repo_type="dataset",
                   operations=ops,
                   commit_message=f"[auto] Daily data update",
@@ -65,14 +67,17 @@ jobs:
 
       - name: Push prediction to HF Space
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_TOKEN:      ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ secrets.HF_SPACE_REPO }}
         run: |
           python - <<'EOF'
           import os
           from huggingface_hub import HfApi, CommitOperationAdd
-          import config
 
-          api = HfApi(token=config.HF_TOKEN)
+          HF_TOKEN      = os.getenv("HF_TOKEN", "")
+          HF_SPACE_REPO = os.getenv("HF_SPACE_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE")
+
+          api = HfApi(token=HF_TOKEN)
           ops = []
           if os.path.exists("latest_prediction.json"):
               ops.append(CommitOperationAdd(
@@ -80,7 +85,7 @@ jobs:
                   path_or_fileobj="latest_prediction.json"))
           if ops:
               api.create_commit(
-                  repo_id=config.HF_SPACE_REPO,
+                  repo_id=HF_SPACE_REPO,
                   repo_type="space",
                   operations=ops,
                   commit_message="[auto] Daily prediction update",

@@ -66,7 +66,13 @@ def run_backtest(start_year: int,
     agent.load(WEIGHTS_PATH)
 
     # ── Backtest with TSL ─────────────────────────────────────────────────────
-    state        = test_env.reset()
+    # FIX: force reset to start_idx (not random) for deterministic evaluation
+    test_env.current_idx    = test_env.start_idx
+    test_env.held_action    = 0
+    test_env.peak_equity    = 1.0
+    test_env.equity         = 1.0
+    test_env.is_stopped_out = False
+    state        = test_env._get_state()
     rets         = []
     allocations  = []
     q_vals_log   = []

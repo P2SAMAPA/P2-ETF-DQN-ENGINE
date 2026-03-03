@@ -56,7 +56,9 @@ class ETFTradingEnv:
     # ── Gym-style interface ───────────────────────────────────────────────────
 
     def reset(self) -> np.ndarray:
-        self.current_idx    = self.start_idx
+        # FIX: randomise start within first 50% of window so agent sees diverse sequences
+        max_rand = self.start_idx + (self.end_idx - self.start_idx) // 2
+        self.current_idx    = int(np.random.randint(self.start_idx, max(self.start_idx + 1, max_rand)))
         self.held_action    = 0          # start in CASH
         self.peak_equity    = 1.0
         self.equity         = 1.0
@@ -105,11 +107,15 @@ class ETFTradingEnv:
                 self.is_stopped_out = True
 
         # ── Risk-adjusted reward ──────────────────────────────────────────────
-        # Scale by inverse 21d vol so agent penalises volatile positions
+        # FIX: clamp vol so CASH (vol~0.005) doesn't get 30x reward amplification
         tbill_daily = self._get_tbill(prev_idx) / 252
         excess_ret  = day_ret - tbill_daily
         vol_21d     = self._get_vol(action, prev_idx)
-        reward      = excess_ret / (vol_21d + 1e-6)
+        vol_scale   = float(np.clip(vol_21d, config.REWARD_VOL_MIN, config.REWARD_VOL_MAX))
+        reward      = excess_ret / vol_scale
+        # FIX: small bonus when ETF (not CASH) beats T-bill — discourage CASH collapse
+        if action != 0 and excess_ret > 0:
+            reward *= config.REWARD_ETF_BONUS
 
         next_state  = self._get_state()
         info        = dict(day_ret=day_ret, equity=self.equity,
@@ -120,12 +126,13 @@ class ETFTradingEnv:
 
     @property
     def observation_size(self) -> int:
-        return self.n_features
+        # FIX: +n_actions for one-hot position encoding appended to state
+        return self.n_features + self.n_actions
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _get_state(self) -> np.ndarray:
-        """Return flattened lookback window ending at current_idx."""
+        """Return flattened lookback window + one-hot current position."""
         start = self.current_idx - self.lookback + 1
         end   = self.current_idx + 1
         window = self.feat_df.iloc[start:end].values.astype(np.float32)
@@ -133,7 +140,10 @@ class ETFTradingEnv:
             pad    = np.zeros((self.lookback - len(window), self.feat_df.shape[1]),
                               dtype=np.float32)
             window = np.vstack([pad, window])
-        return window.flatten()
+        # FIX: append one-hot current position so agent knows what it is holding
+        position = np.zeros(self.n_actions, dtype=np.float32)
+        position[self.held_action] = 1.0
+        return np.concatenate([window.flatten(), position])
 
     def _get_tbill(self, idx: int) -> float:
         """Annual T-bill rate at given index (fraction)."""

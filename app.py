@@ -140,7 +140,7 @@ with st.sidebar:
         if triggered:
             st.success(
                 f"✅ Training triggered!\n\n"
-                f"Training from **{start_year}** · 200 episodes · "
+                f"Training from **{start_year}** · 300 episodes · "
                 f"**{fee_bps}bps** fees\n\n"
                 f"Results update here in ~50–65 min."
             )
@@ -153,7 +153,7 @@ with st.sidebar:
                 f"- Or add `GITHUB_TOKEN` to HF Space secrets."
             )
 
-    st.caption(f"↑ Trains from {start_year} onwards · 200 episodes (hardcoded in train_models.yml)")
+    st.caption(f"↑ Trains from {start_year} onwards · 300 episodes (hardcoded in train_models.yml)")
 
 
 # ── Load outputs ──────────────────────────────────────────────────────────────

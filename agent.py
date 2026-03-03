@@ -203,7 +203,13 @@ class DQNAgent:
         return float(loss.item())
 
     def _update_target(self):
-        self.target_net.load_state_dict(self.online_net.state_dict())
+        # FIX: soft Polyak update instead of hard copy
+        # target = TAU * online + (1-TAU) * target — much more stable training
+        for p_on, p_tgt in zip(self.online_net.parameters(),
+                                self.target_net.parameters()):
+            p_tgt.data.copy_(
+                config.TAU * p_on.data + (1.0 - config.TAU) * p_tgt.data
+            )
 
     # ── Persistence ───────────────────────────────────────────────────────────
 

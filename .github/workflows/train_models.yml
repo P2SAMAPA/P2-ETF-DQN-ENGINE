@@ -163,4 +163,4 @@ jobs:
         run: |
           echo "✅ DQN training pipeline complete."
           echo "   start_year : ${{ github.event.inputs.start_year }}"
-          echo "   episodes   : 200 (hardcoded)"
+          echo "   episodes   : 500 (hardcoded)"

@@ -23,7 +23,7 @@ on:
 jobs:
   train:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: write
 
@@ -85,7 +85,7 @@ jobs:
         run: |
           python train.py \
             --start_year "${{ github.event.inputs.start_year || '2015' }}" \
-            --episodes   "500" \
+            --episodes   "300" \
             --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}"
 
       - name: Run evaluation
@@ -163,4 +163,4 @@ jobs:
         run: |
           echo "✅ DQN training pipeline complete."
           echo "   start_year : ${{ github.event.inputs.start_year }}"
-          echo "   episodes   : 500 (hardcoded)"
+          echo "   episodes   : 300 (hardcoded)"

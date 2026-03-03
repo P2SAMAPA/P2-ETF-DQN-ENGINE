@@ -77,6 +77,13 @@ jobs:
           HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
         run: python data_download.py --mode incremental
 
+      - name: Smoke test (fast pre-flight checks — fails fast before wasting training time)
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: python smoke_test.py
+
       - name: Train Dueling DQN Agent
         env:
           HF_TOKEN:        ${{ secrets.HF_TOKEN }}
@@ -163,4 +170,4 @@ jobs:
         run: |
           echo "✅ DQN training pipeline complete."
           echo "   start_year : ${{ github.event.inputs.start_year }}"
-          echo "   episodes   : 300 (hardcoded)"
+          echo "   episodes   : 200 (hardcoded)"

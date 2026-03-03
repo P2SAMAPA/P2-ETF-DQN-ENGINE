@@ -121,16 +121,20 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
     feat_df    = build_features(etf_prices, macro)
 
     # ── Load agent ────────────────────────────────────────────────────────────
-    state_size = feat_df.shape[1] * lookback
+    # FIX: state_size must match env.py — flattened window + one-hot position (n_actions)
+    state_size = feat_df.shape[1] * lookback + config.N_ACTIONS
     agent      = DQNAgent(state_size=state_size)
     agent.load(WEIGHTS_PATH)
 
-    # ── Build current state (last lookback rows) ───────────────────────────────
+    # ── Build current state (last lookback rows) ──────────────────────────────
     window = feat_df.iloc[-lookback:].values.astype(np.float32)
     if len(window) < lookback:
         pad    = np.zeros((lookback - len(window), feat_df.shape[1]), dtype=np.float32)
         window = np.vstack([pad, window])
-    state = window.flatten()
+    # FIX: append one-hot position — assume CASH at inference start (index 0)
+    position = np.zeros(config.N_ACTIONS, dtype=np.float32)
+    position[0] = 1.0   # CASH
+    state = np.concatenate([window.flatten(), position])
 
     # ── Inference ─────────────────────────────────────────────────────────────
     q_values = agent.q_values(state)

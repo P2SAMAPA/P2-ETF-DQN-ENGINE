@@ -51,16 +51,22 @@ BBANDS_PERIOD   = 20
 
 # ── Dueling DQN Hyperparameters ───────────────────────────────────────────────
 HIDDEN_UNITS        = 256
-LEARNING_RATE       = 0.001
+LEARNING_RATE       = 0.0005        # FIX: reduced from 0.001
 GAMMA               = 0.99          # discount factor
 EPSILON_START       = 1.0
-EPSILON_END         = 0.05
-EPSILON_DECAY_FRAC  = 0.50          # fraction of training steps for decay
+EPSILON_END         = 0.10          # FIX: was 0.05
+EPSILON_DECAY_FRAC  = 0.80          # FIX: was 0.50 decay over 80% not 50%
 REPLAY_BUFFER_SIZE  = 100_000
 BATCH_SIZE          = 64
-TARGET_UPDATE_FREQ  = 500           # steps between hard target network updates
+TARGET_UPDATE_FREQ  = 1             # FIX: soft Polyak update every step
+TAU                 = 0.005         # FIX: Polyak factor
 MIN_REPLAY_SIZE     = 1_000         # steps before training starts
-DEFAULT_EPISODES    = 300           # training episodes (passes over data)
+DEFAULT_EPISODES    = 500           # FIX: was 300
+
+# Reward shaping
+REWARD_VOL_MIN      = 0.05          # FIX: min vol floor prevents CASH 30x amplification
+REWARD_VOL_MAX      = 0.40          # FIX: max vol ceiling
+REWARD_ETF_BONUS    = 1.10          # FIX: bonus when ETF beats T-bill
 
 # ── Risk Controls (defaults — overridden by UI sliders) ───────────────────────
 DEFAULT_TSL_PCT     = 10.0          # trailing stop loss %

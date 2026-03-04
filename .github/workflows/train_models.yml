@@ -1,6 +1,9 @@
 name: Train DQN Agent
 
 on:
+  schedule:
+    - cron: "0 1 * * 2-6"    # 01:00 UTC = 8pm EST Mon-Fri (sweep auto-run)
+    - cron: "0 0 * * 2-6"    # 00:00 UTC = 7pm EST Mon-Fri (wipe previous day's sweep cache)
   workflow_dispatch:
     inputs:
       start_year:
@@ -19,9 +22,51 @@ on:
         description: "Z-score re-entry threshold"
         required: false
         default: "1.1"
+      sweep_mode:
+        description: "Comma-separated sweep years e.g. 2008,2013,2015,2017,2019,2021 (blank = single year)"
+        required: false
+        default: ""
 
 jobs:
+  # ── Midnight wipe — deletes previous day's sweep cache files ────────────────
+  wipe_sweep_cache:
+    if: >
+      github.event_name == 'schedule' &&
+      github.event.schedule == '0 0 * * 2-6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete old sweep cache files
+        run: |
+          python3 - <<'EOF'
+          import os, glob
+          from datetime import datetime, timezone, timedelta
+          today = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%Y%m%d")
+          deleted = 0
+          for f in glob.glob("results/sweep_*.json"):
+              if today not in f:
+                  os.remove(f)
+                  print(f"Deleted: {f}")
+                  deleted += 1
+          print(f"Wiped {deleted} stale sweep cache files")
+          EOF
+      - name: Commit wipe
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A results/
+          git diff --cached --quiet || git commit -m "[auto] Wipe stale sweep cache $(date -u +%Y-%m-%d)"
+          git push || true
+
+  # ── Single-year train — manual or daily auto ─────────────────────────────────
   train:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.sweep_mode == '' || github.event.inputs.sweep_mode == null))
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -90,10 +135,12 @@ jobs:
           HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
           FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
         run: |
+          START_YEAR="${{ github.event.inputs.start_year }}"
+          START_YEAR="${START_YEAR:-2015}"
           python train.py \
-            --start_year "${{ github.event.inputs.start_year || '2015' }}" \
+            --start_year "$START_YEAR" \
             --episodes   "300" \
-            --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}"
+            --fee_bps    "${{ github.event.inputs.fee_bps || '10' }}"
 
       - name: Run evaluation
         env:
@@ -101,11 +148,13 @@ jobs:
           HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
           FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
         run: |
+          START_YEAR="${{ github.event.inputs.start_year }}"
+          START_YEAR="${START_YEAR:-2015}"
           python evaluate.py \
-            --start_year "${{ github.event.inputs.start_year || '2015' }}" \
-            --fee_bps    "${{ github.event.inputs.fee_bps    || '10'   }}" \
-            --tsl        "${{ github.event.inputs.tsl_pct    || '10'   }}" \
-            --z          "${{ github.event.inputs.z_reentry  || '1.1'  }}"
+            --start_year "$START_YEAR" \
+            --fee_bps    "${{ github.event.inputs.fee_bps || '10' }}" \
+            --tsl        "${{ github.event.inputs.tsl_pct || '10' }}" \
+            --z          "${{ github.event.inputs.z_reentry || '1.1' }}"
 
       - name: Run prediction
         env:
@@ -161,7 +210,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add evaluation_results.json latest_prediction.json \
-                  models/training_summary.json 2>/dev/null || true
+                  models/training_summary.json results/ 2>/dev/null || true
           git diff --cached --quiet || \
             git commit -m "[auto] DQN results — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
           git push || true
@@ -171,3 +220,214 @@ jobs:
           echo "✅ DQN training pipeline complete."
           echo "   start_year : ${{ github.event.inputs.start_year }}"
           echo "   episodes   : 200 (hardcoded)"
+
+  # ── Sweep job template (one per year, all run in parallel) ──────────────────
+  sweep_2008:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2008'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+      - run: python data_download.py --mode incremental
+      - run: python train.py --start_year 2008 --episodes 300 --fee_bps 10
+      - run: python evaluate.py --start_year 2008 --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --tsl 10 --z 1.1
+      - name: Commit sweep results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+          git add results/ evaluation_results.json latest_prediction.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep 2008 $(date -u +%Y-%m-%d)"
+          git push || true
+
+  sweep_2013:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2013'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+      - run: python data_download.py --mode incremental
+      - run: python train.py --start_year 2013 --episodes 300 --fee_bps 10
+      - run: python evaluate.py --start_year 2013 --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --tsl 10 --z 1.1
+      - name: Commit sweep results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+          git add results/ evaluation_results.json latest_prediction.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep 2013 $(date -u +%Y-%m-%d)"
+          git push || true
+
+  sweep_2015:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2015'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+      - run: python data_download.py --mode incremental
+      - run: python train.py --start_year 2015 --episodes 300 --fee_bps 10
+      - run: python evaluate.py --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --tsl 10 --z 1.1
+      - name: Commit sweep results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+          git add results/ evaluation_results.json latest_prediction.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep 2015 $(date -u +%Y-%m-%d)"
+          git push || true
+
+  sweep_2017:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2017'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+      - run: python data_download.py --mode incremental
+      - run: python train.py --start_year 2017 --episodes 300 --fee_bps 10
+      - run: python evaluate.py --start_year 2017 --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --tsl 10 --z 1.1
+      - name: Commit sweep results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+          git add results/ evaluation_results.json latest_prediction.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep 2017 $(date -u +%Y-%m-%d)"
+          git push || true
+
+  sweep_2019:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2019'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+      - run: python data_download.py --mode incremental
+      - run: python train.py --start_year 2019 --episodes 300 --fee_bps 10
+      - run: python evaluate.py --start_year 2019 --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --tsl 10 --z 1.1
+      - name: Commit sweep results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+          git add results/ evaluation_results.json latest_prediction.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep 2019 $(date -u +%Y-%m-%d)"
+          git push || true
+
+  sweep_2021:
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
+      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2021'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+      - run: python data_download.py --mode incremental
+      - run: python train.py --start_year 2021 --episodes 300 --fee_bps 10
+      - run: python evaluate.py --start_year 2021 --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --tsl 10 --z 1.1
+      - name: Commit sweep results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+          git add results/ evaluation_results.json latest_prediction.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep 2021 $(date -u +%Y-%m-%d)"
+          git push || true

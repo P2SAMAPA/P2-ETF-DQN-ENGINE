@@ -737,7 +737,7 @@ with tab2:
         sweep_str = ",".join(str(y) for y in trigger_years)
         with st.spinner(f"🚀 Triggering sweep for {sweep_str}..."):
             ok = _trigger_github(
-                start_year=missing_today[0],
+                start_year=trigger_years[0],
                 fee_bps=fee_bps, tsl_pct=tsl_pct, z_reentry=z_reentry,
                 sweep_mode=sweep_str
             )

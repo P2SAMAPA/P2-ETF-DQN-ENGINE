@@ -170,21 +170,30 @@ def run_backtest(start_year: int,
     sweep_years = [2008, 2013, 2015, 2017, 2019, 2021]
     if start_year in sweep_years:
         from datetime import timezone
-        today_str  = datetime.now(timezone.utc).strftime("%Y%m%d")
-        # Derive Z-score and conviction from prediction file if available
-        z_val, conviction = 0.0, "?"
-        pred_path = "latest_prediction.json"
-        if os.path.exists(pred_path):
-            with open(pred_path) as pf:
-                pred_data = json.load(pf)
-            z_val      = pred_data.get("z_score", 0.0)
-            conviction = ("Very High" if z_val >= 2.0 else
-                          "High"      if z_val >= 1.5 else
-                          "Moderate"  if z_val >= 1.0 else "Low")
+        today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+        # Z-score from the LAST step's Q-values (already computed during backtest)
+        # This is always available — no dependency on predict.py running first
+        last_q = np.array(q_vals_log[-1]) if q_vals_log else np.zeros(len(config.ACTIONS))
+        last_z_arr = _q_zscore(last_q)
+        last_action_idx = int(last_q.argmax())
+        z_val = float(last_z_arr[last_action_idx])
+        z_val = z_val if np.isfinite(z_val) else 0.0
+
+        # Next signal = the last day's chosen action
+        next_signal = config.ACTIONS[last_action_idx] if allocations else "CASH"
+
+        conviction = ("Very High" if z_val >= 2.0 else
+                      "High"      if z_val >= 1.5 else
+                      "Moderate"  if z_val >= 1.0 else "Low")
+
+        # Most held ETF (excluding CASH) for display
+        non_cash = {k: v for k, v in alloc_counts.items() if k != "CASH"}
+        top_held = max(non_cash, key=non_cash.get) if non_cash else next_signal
 
         sweep_payload = {
-            "signal":     alloc_counts and max(alloc_counts, key=lambda k: alloc_counts[k]
-                          if k != "CASH" else -1),
+            "signal":     next_signal,
+            "top_held":   top_held,
             "ann_return": round(ann_ret, 6),
             "z_score":    round(z_val,  4),
             "sharpe":     round(sharpe,  4),
@@ -199,6 +208,7 @@ def run_backtest(start_year: int,
         with open(sweep_fname, "w") as sf:
             json.dump(sweep_payload, sf, indent=2)
         print(f"  Sweep cache saved → {sweep_fname}")
+        print(f"  Sweep signal: {next_signal}  z={z_val:.3f}  conviction={conviction}")
 
     print(f"\n  Ann. Return  : {ann_ret:.2%}")
     print(f"  Sharpe Ratio : {sharpe:.3f}")

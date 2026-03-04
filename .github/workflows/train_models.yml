@@ -68,7 +68,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' &&
        (github.event.inputs.sweep_mode == '' || github.event.inputs.sweep_mode == null))
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     permissions:
       contents: write
 
@@ -137,9 +137,17 @@ jobs:
         run: |
           START_YEAR="${{ github.event.inputs.start_year }}"
           START_YEAR="${START_YEAR:-2015}"
+          # Adaptive episodes: earlier years have more data per episode
+          if   [ "$START_YEAR" -le 2010 ]; then EPISODES=150
+          elif [ "$START_YEAR" -le 2013 ]; then EPISODES=200
+          elif [ "$START_YEAR" -le 2015 ]; then EPISODES=220
+          elif [ "$START_YEAR" -le 2017 ]; then EPISODES=250
+          elif [ "$START_YEAR" -le 2019 ]; then EPISODES=280
+          else EPISODES=300
+          fi
           python train.py \
             --start_year "$START_YEAR" \
-            --episodes   "300" \
+            --episodes   "$EPISODES" \
             --fee_bps    "${{ github.event.inputs.fee_bps || '10' }}"
 
       - name: Run evaluation
@@ -227,7 +235,7 @@ jobs:
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
       (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2008'))
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     permissions:
       contents: write
     env:
@@ -245,7 +253,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python smoke_test.py
       - run: python data_download.py --mode incremental
-      - run: python train.py --start_year 2008 --episodes 300 --fee_bps 10
+      - run: python train.py --start_year 2008 --episodes 150 --fee_bps 10
       - run: python evaluate.py --start_year 2008 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
       - name: Commit sweep results
@@ -262,7 +270,7 @@ jobs:
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
       (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2013'))
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     permissions:
       contents: write
     env:
@@ -280,7 +288,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python smoke_test.py
       - run: python data_download.py --mode incremental
-      - run: python train.py --start_year 2013 --episodes 300 --fee_bps 10
+      - run: python train.py --start_year 2013 --episodes 200 --fee_bps 10
       - run: python evaluate.py --start_year 2013 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
       - name: Commit sweep results
@@ -297,7 +305,7 @@ jobs:
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
       (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2015'))
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 270
     permissions:
       contents: write
     env:
@@ -315,7 +323,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python smoke_test.py
       - run: python data_download.py --mode incremental
-      - run: python train.py --start_year 2015 --episodes 300 --fee_bps 10
+      - run: python train.py --start_year 2015 --episodes 220 --fee_bps 10
       - run: python evaluate.py --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
       - name: Commit sweep results
@@ -332,7 +340,7 @@ jobs:
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
       (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2017'))
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     permissions:
       contents: write
     env:
@@ -350,7 +358,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python smoke_test.py
       - run: python data_download.py --mode incremental
-      - run: python train.py --start_year 2017 --episodes 300 --fee_bps 10
+      - run: python train.py --start_year 2017 --episodes 250 --fee_bps 10
       - run: python evaluate.py --start_year 2017 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
       - name: Commit sweep results
@@ -367,7 +375,7 @@ jobs:
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
       (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2019'))
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 210
     permissions:
       contents: write
     env:
@@ -385,7 +393,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python smoke_test.py
       - run: python data_download.py --mode incremental
-      - run: python train.py --start_year 2019 --episodes 300 --fee_bps 10
+      - run: python train.py --start_year 2019 --episodes 280 --fee_bps 10
       - run: python evaluate.py --start_year 2019 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
       - name: Commit sweep results

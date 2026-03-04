@@ -731,8 +731,9 @@ with tab2:
                 f"{', '.join(str(y) for y in missing_today)}"
             )
 
-    if sweep_btn and missing_today:
-        sweep_str = ",".join(str(y) for y in missing_today)
+    trigger_years = SWEEP_YEARS if force_rerun else missing_today
+    if sweep_btn and trigger_years:
+        sweep_str = ",".join(str(y) for y in trigger_years)
         with st.spinner(f"🚀 Triggering sweep for {sweep_str}..."):
             ok = _trigger_github(
                 start_year=missing_today[0],
@@ -741,7 +742,7 @@ with tab2:
             )
         if ok:
             st.success(
-                f"✅ Triggered **{len(missing_today)}** parallel jobs for: {sweep_str}.  \n"
+                f"✅ Triggered **{len(trigger_years)}** parallel jobs for: {sweep_str}.  \n"
                 f"Each takes ~90 mins. Refresh when complete."
             )
         else:
@@ -761,9 +762,10 @@ with tab2:
     w_info    = consensus["etf_summary"][winner]
     win_color = ETF_COLORS.get(winner, "#0066cc")
     score_pct = w_info["score_share"] * 100
+    score_pct = score_pct if (score_pct == score_pct) else 0.0  # guard nan
     split_sig = w_info["score_share"] < 0.40
     sig_label = "⚠️ Split Signal" if split_sig else "✅ Clear Signal"
-    note      = f"Score share {score_pct:.0f}% · {w_info['n_years']}/{n_total} years · avg score {w_info['cum_score']:.2f}"
+    note      = f"Score share {score_pct:.0f}% · {w_info['n_years']}/{n_total} years · avg score {w_info['cum_score']:.4f}"
     date_note = f"Results from: {display_date}"
 
     # ── Winner banner ─────────────────────────────────────────────────────────
@@ -828,7 +830,7 @@ with tab2:
             x=sorted_etfs,
             y=[es[e]["cum_score"] for e in sorted_etfs],
             marker_color=[ETF_COLORS.get(e, "#888") for e in sorted_etfs],
-            text=[f"{es[e]['n_years']}yr · {es[e]['score_share']*100:.0f}%<br>{es[e]['cum_score']:.2f}"
+            text=[f"{es[e]['n_years']}yr · {es[e]['score_share']*100 if es[e]['score_share']==es[e]['score_share'] else 0:.0f}%<br>{es[e]['cum_score']:.2f}"
                   for e in sorted_etfs],
             textposition="outside",
         ))

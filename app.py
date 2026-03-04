@@ -140,50 +140,61 @@ def _sweep_filename(year: int, for_date: date) -> str:
 
 
 def _load_sweep_cache(for_date: date) -> dict:
-    """Load all sweep result files matching today's date stamp."""
+    """Load date-stamped sweep files from HF Dataset."""
     cache = {}
-    results_dir = "results"
-    if not os.path.exists(results_dir):
-        return cache
-    for yr in SWEEP_YEARS:
-        fname = os.path.join(results_dir, _sweep_filename(yr, for_date))
-        if os.path.exists(fname):
+    try:
+        from huggingface_hub import hf_hub_download
+        token   = os.getenv("HF_TOKEN")
+        repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+        date_tag = for_date.strftime("%Y%m%d")
+        for yr in SWEEP_YEARS:
+            fname = f"sweep_{yr}_{date_tag}.json"
             try:
-                with open(fname) as f:
+                path = hf_hub_download(repo_id=repo_id, filename=f"sweep/{fname}",
+                                       repo_type="dataset", token=token, force_download=True)
+                with open(path) as f:
                     cache[yr] = json.load(f)
             except Exception:
                 pass
+    except Exception:
+        pass
     return cache
 
 
 def _load_sweep_cache_any() -> tuple:
-    """Load most recent sweep cache regardless of date. Returns (cache, date_str)."""
-    results_dir = "results"
-    if not os.path.exists(results_dir):
-        return {}, None
-    # Find most recent date with any sweep files
-    found = {}
-    best_date = None
-    for fname in os.listdir(results_dir):
-        if fname.startswith("sweep_") and fname.endswith(".json"):
-            parts = fname.replace(".json", "").split("_")
-            if len(parts) == 3:
+    """Load most recent sweep files from HF Dataset regardless of date. Returns (cache, date)."""
+    found, best_date = {}, None
+    try:
+        from huggingface_hub import HfApi, hf_hub_download
+        token   = os.getenv("HF_TOKEN")
+        repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+        api     = HfApi()
+        files   = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
+        # Find most recent date across all sweep files
+        for fname in files:
+            fname = os.path.basename(fname)
+            if fname.startswith("sweep_") and fname.endswith(".json"):
+                parts = fname.replace(".json","").split("_")
+                if len(parts) == 3:
+                    try:
+                        dt = datetime.strptime(parts[2], "%Y%m%d").date()
+                        if best_date is None or dt > best_date:
+                            best_date = dt
+                    except Exception:
+                        pass
+        if best_date:
+            date_tag = best_date.strftime("%Y%m%d")
+            for yr in SWEEP_YEARS:
+                fname = f"sweep_{yr}_{date_tag}.json"
                 try:
-                    yr   = int(parts[1])
-                    dt   = datetime.strptime(parts[2], "%Y%m%d").date()
-                    if best_date is None or dt > best_date:
-                        best_date = dt
-                except Exception:
-                    pass
-    if best_date:
-        for yr in SWEEP_YEARS:
-            fname = os.path.join(results_dir, _sweep_filename(yr, best_date))
-            if os.path.exists(fname):
-                try:
-                    with open(fname) as f:
+                    path = hf_hub_download(repo_id=repo_id, filename=f"sweep/{fname}",
+                                           repo_type="dataset", token=token, force_download=True)
+                    with open(path) as f:
                         found[yr] = json.load(f)
                 except Exception:
                     pass
+    except Exception:
+        pass
     return found, best_date
 
 

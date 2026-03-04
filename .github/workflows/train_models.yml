@@ -256,6 +256,24 @@ jobs:
       - run: python train.py --start_year 2008 --episodes 150 --fee_bps 10
       - run: python evaluate.py --start_year 2008 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          token   = os.environ["HF_TOKEN"]
+          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          api     = HfApi()
+          ops     = []
+          for f in glob.glob("results/sweep_*.json"):
+              fname = os.path.basename(f)
+              with open(f, "rb") as fh:
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/{fname}", path_or_fileobj=fh.read()))
+          if ops:
+              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
+                                operations=ops, commit_message=f"Sweep results: {[o.path_in_repo for o in ops]}")
+              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          PYEOF
       - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"
@@ -291,6 +309,24 @@ jobs:
       - run: python train.py --start_year 2013 --episodes 200 --fee_bps 10
       - run: python evaluate.py --start_year 2013 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          token   = os.environ["HF_TOKEN"]
+          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          api     = HfApi()
+          ops     = []
+          for f in glob.glob("results/sweep_*.json"):
+              fname = os.path.basename(f)
+              with open(f, "rb") as fh:
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/{fname}", path_or_fileobj=fh.read()))
+          if ops:
+              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
+                                operations=ops, commit_message=f"Sweep results: {[o.path_in_repo for o in ops]}")
+              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          PYEOF
       - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"
@@ -326,6 +362,24 @@ jobs:
       - run: python train.py --start_year 2015 --episodes 220 --fee_bps 10
       - run: python evaluate.py --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          token   = os.environ["HF_TOKEN"]
+          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          api     = HfApi()
+          ops     = []
+          for f in glob.glob("results/sweep_*.json"):
+              fname = os.path.basename(f)
+              with open(f, "rb") as fh:
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/{fname}", path_or_fileobj=fh.read()))
+          if ops:
+              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
+                                operations=ops, commit_message=f"Sweep results: {[o.path_in_repo for o in ops]}")
+              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          PYEOF
       - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"
@@ -361,6 +415,24 @@ jobs:
       - run: python train.py --start_year 2017 --episodes 250 --fee_bps 10
       - run: python evaluate.py --start_year 2017 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          token   = os.environ["HF_TOKEN"]
+          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          api     = HfApi()
+          ops     = []
+          for f in glob.glob("results/sweep_*.json"):
+              fname = os.path.basename(f)
+              with open(f, "rb") as fh:
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/{fname}", path_or_fileobj=fh.read()))
+          if ops:
+              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
+                                operations=ops, commit_message=f"Sweep results: {[o.path_in_repo for o in ops]}")
+              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          PYEOF
       - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"
@@ -396,6 +468,24 @@ jobs:
       - run: python train.py --start_year 2019 --episodes 280 --fee_bps 10
       - run: python evaluate.py --start_year 2019 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          token   = os.environ["HF_TOKEN"]
+          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          api     = HfApi()
+          ops     = []
+          for f in glob.glob("results/sweep_*.json"):
+              fname = os.path.basename(f)
+              with open(f, "rb") as fh:
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/{fname}", path_or_fileobj=fh.read()))
+          if ops:
+              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
+                                operations=ops, commit_message=f"Sweep results: {[o.path_in_repo for o in ops]}")
+              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          PYEOF
       - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"
@@ -431,6 +521,24 @@ jobs:
       - run: python train.py --start_year 2021 --episodes 300 --fee_bps 10
       - run: python evaluate.py --start_year 2021 --fee_bps 10 --tsl 10 --z 1.1
       - run: python predict.py --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+          token   = os.environ["HF_TOKEN"]
+          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          api     = HfApi()
+          ops     = []
+          for f in glob.glob("results/sweep_*.json"):
+              fname = os.path.basename(f)
+              with open(f, "rb") as fh:
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/{fname}", path_or_fileobj=fh.read()))
+          if ops:
+              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
+                                operations=ops, commit_message=f"Sweep results: {[o.path_in_repo for o in ops]}")
+              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          PYEOF
       - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"

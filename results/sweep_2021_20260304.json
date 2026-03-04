@@ -1,0 +1,11 @@
+{
+  "signal": "SLV",
+  "ann_return": 0.467066,
+  "z_score": 1.333,
+  "sharpe": 1.0171,
+  "max_dd": -0.161783,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2021,
+  "sweep_date": "20260304"
+}

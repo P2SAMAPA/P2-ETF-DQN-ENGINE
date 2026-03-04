@@ -1,0 +1,11 @@
+{
+  "signal": "CASH",
+  "ann_return": 0.036653,
+  "z_score": 1.934,
+  "sharpe": 0.0,
+  "max_dd": 0.0,
+  "conviction": "High",
+  "lookback": 20,
+  "start_year": 2008,
+  "sweep_date": "20260304"
+}

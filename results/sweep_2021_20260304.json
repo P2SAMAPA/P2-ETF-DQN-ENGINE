@@ -1,10 +1,10 @@
 {
-  "signal": "SLV",
-  "ann_return": 0.463028,
-  "z_score": NaN,
-  "sharpe": 0.9164,
-  "max_dd": -0.39002,
-  "conviction": "Low",
+  "signal": "VNQ",
+  "ann_return": 0.581408,
+  "z_score": 2.312,
+  "sharpe": 2.1418,
+  "max_dd": -0.096668,
+  "conviction": "Very High",
   "lookback": 20,
   "start_year": 2021,
   "sweep_date": "20260304"

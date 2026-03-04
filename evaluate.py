@@ -166,6 +166,40 @@ def run_backtest(start_year: int,
     with open(EVAL_PATH, "w") as f:
         json.dump(results, f, indent=2)
 
+    # ── Write date-stamped sweep cache if this is a sweep year ────────────────
+    sweep_years = [2008, 2013, 2015, 2017, 2019, 2021]
+    if start_year in sweep_years:
+        from datetime import timezone
+        today_str  = datetime.now(timezone.utc).strftime("%Y%m%d")
+        # Derive Z-score and conviction from prediction file if available
+        z_val, conviction = 0.0, "?"
+        pred_path = "latest_prediction.json"
+        if os.path.exists(pred_path):
+            with open(pred_path) as pf:
+                pred_data = json.load(pf)
+            z_val      = pred_data.get("z_score", 0.0)
+            conviction = ("Very High" if z_val >= 2.0 else
+                          "High"      if z_val >= 1.5 else
+                          "Moderate"  if z_val >= 1.0 else "Low")
+
+        sweep_payload = {
+            "signal":     alloc_counts and max(alloc_counts, key=lambda k: alloc_counts[k]
+                          if k != "CASH" else -1),
+            "ann_return": round(ann_ret, 6),
+            "z_score":    round(z_val,  4),
+            "sharpe":     round(sharpe,  4),
+            "max_dd":     round(max_dd,  6),
+            "conviction": conviction,
+            "lookback":   results.get("lookback", config.LOOKBACK_WINDOW),
+            "start_year": start_year,
+            "sweep_date": today_str,
+        }
+        os.makedirs("results", exist_ok=True)
+        sweep_fname = os.path.join("results", f"sweep_{start_year}_{today_str}.json")
+        with open(sweep_fname, "w") as sf:
+            json.dump(sweep_payload, sf, indent=2)
+        print(f"  Sweep cache saved → {sweep_fname}")
+
     print(f"\n  Ann. Return  : {ann_ret:.2%}")
     print(f"  Sharpe Ratio : {sharpe:.3f}")
     print(f"  Max Drawdown : {max_dd:.2%}")

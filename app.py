@@ -708,30 +708,31 @@ with tab2:
     st.divider()
 
     # ── Manual sweep button ───────────────────────────────────────────────────
-    col_btn, col_info = st.columns([1, 3])
     missing_today = [yr for yr in SWEEP_YEARS if yr not in today_cache]
+    force_rerun   = st.checkbox("🔄 Force re-run all years", value=False,
+                                help="Re-trains even if today's results already exist")
+    trigger_years = SWEEP_YEARS if force_rerun else missing_today
 
+    col_btn, col_info = st.columns([1, 3])
     with col_btn:
         sweep_btn = st.button(
             "🚀 Run Consensus Sweep",
             type="primary",
             use_container_width=True,
-            disabled=(sweep_done or is_training),
-            help="Only enabled when today's results are missing/incomplete"
+            disabled=(is_training or (sweep_done and not force_rerun)),
+            help="Triggers parallel GitHub Actions jobs for missing years"
         )
     with col_info:
-        if sweep_done:
+        if sweep_done and not force_rerun:
             st.success(f"✅ Today's sweep complete ({today_est}) — {n_total}/{n_total} years ready")
         elif is_training:
             st.warning(f"⏳ Training in progress... ({n_today}/{n_total} done today)")
         else:
             st.info(
                 f"**{n_today}/{n_total}** years done for today ({today_est}).  \n"
-                f"Will trigger **{len(missing_today)}** parallel jobs: "
-                f"{', '.join(str(y) for y in missing_today)}"
+                f"Will trigger **{len(trigger_years)}** parallel jobs: "
+                f"{', '.join(str(y) for y in trigger_years)}"
             )
-
-    trigger_years = SWEEP_YEARS if force_rerun else missing_today
     if sweep_btn and trigger_years:
         sweep_str = ",".join(str(y) for y in trigger_years)
         with st.spinner(f"🚀 Triggering sweep for {sweep_str}..."):

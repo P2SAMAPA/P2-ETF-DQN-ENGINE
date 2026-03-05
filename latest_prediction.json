@@ -1,36 +1,36 @@
 {
-  "as_of_date": "2026-03-04",
-  "final_signal": "CASH",
-  "final_confidence": 0.2019,
-  "z_score": 1.385,
+  "as_of_date": "2026-03-05",
+  "final_signal": "SLV",
+  "final_confidence": 0.1436,
+  "z_score": 1.44,
   "q_values": {
-    "CASH": 2.1694,
-    "TLT": 2.0806,
-    "VCIT": 2.0763,
-    "LQD": 2.0836,
-    "HYG": 2.1552,
-    "VNQ": 2.1674,
-    "GLD": 2.0679,
-    "SLV": 2.1022
+    "CASH": 1.9623,
+    "TLT": 1.9644,
+    "VCIT": 1.9412,
+    "LQD": 1.9455,
+    "HYG": 1.9643,
+    "VNQ": 1.9631,
+    "GLD": 1.9548,
+    "SLV": 1.9729
   },
   "probabilities": {
-    "CASH": 0.2019,
-    "TLT": 0.0831,
-    "VCIT": 0.0796,
-    "LQD": 0.0857,
-    "HYG": 0.1753,
-    "VNQ": 0.198,
-    "GLD": 0.0732,
-    "SLV": 0.1032
+    "CASH": 0.1291,
+    "TLT": 0.1319,
+    "VCIT": 0.1046,
+    "LQD": 0.1091,
+    "HYG": 0.1317,
+    "VNQ": 0.1302,
+    "GLD": 0.1198,
+    "SLV": 0.1436
   },
-  "tbill_rate": 3.61,
+  "tbill_rate": 3.6,
   "tsl_status": {
-    "two_day_cumul_pct": 0.0,
+    "two_day_cumul_pct": -7.64,
     "tsl_triggered": false,
     "in_cash": false,
     "z_reentry": 1.1,
     "tsl_pct": 10.0
   },
   "trained_from_year": 2021,
-  "trained_at": "2026-03-04T14:53:24.950028"
+  "trained_at": "2026-03-05T03:07:42.782188"
 }

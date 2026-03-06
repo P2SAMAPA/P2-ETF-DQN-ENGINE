@@ -1,0 +1,12 @@
+{
+  "signal": "HYG",
+  "top_held": "VNQ",
+  "ann_return": 0.734771,
+  "z_score": 1.3843,
+  "sharpe": 2.6025,
+  "max_dd": -0.067488,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2021,
+  "sweep_date": "20260306"
+}

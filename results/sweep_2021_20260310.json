@@ -1,11 +1,11 @@
 {
-  "signal": "TLT",
+  "signal": "VNQ",
   "top_held": "SLV",
-  "ann_return": 2.271302,
-  "z_score": 1.0382,
-  "sharpe": 3.2811,
-  "max_dd": -0.141227,
-  "conviction": "Moderate",
+  "ann_return": 0.572906,
+  "z_score": 1.8541,
+  "sharpe": 1.1973,
+  "max_dd": -0.158995,
+  "conviction": "High",
   "lookback": 20,
   "start_year": 2021,
   "sweep_date": "20260310"

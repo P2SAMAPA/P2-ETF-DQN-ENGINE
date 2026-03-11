@@ -1,11 +1,11 @@
 {
-  "signal": "VNQ",
+  "signal": "HYG",
   "top_held": "VNQ",
-  "ann_return": 0.073574,
-  "z_score": 2.0494,
-  "sharpe": 0.2722,
-  "max_dd": -0.140133,
-  "conviction": "Very High",
+  "ann_return": 0.23238,
+  "z_score": 1.4872,
+  "sharpe": 0.9564,
+  "max_dd": -0.134619,
+  "conviction": "Moderate",
   "lookback": 20,
   "start_year": 2015,
   "sweep_date": "20260311"

@@ -1,11 +1,11 @@
 {
-  "signal": "LQD",
-  "top_held": "GLD",
-  "ann_return": 0.263706,
-  "z_score": 0.9902,
-  "sharpe": 1.0054,
-  "max_dd": -0.094849,
-  "conviction": "Low",
+  "signal": "TLT",
+  "top_held": "SLV",
+  "ann_return": 1.53395,
+  "z_score": 1.4623,
+  "sharpe": 2.2097,
+  "max_dd": -0.138675,
+  "conviction": "Moderate",
   "lookback": 20,
   "start_year": 2021,
   "sweep_date": "20260312"

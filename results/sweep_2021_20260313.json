@@ -1,11 +1,11 @@
 {
   "signal": "VNQ",
-  "top_held": "SLV",
-  "ann_return": 1.656187,
-  "z_score": 1.5086,
-  "sharpe": 2.7005,
-  "max_dd": -0.167664,
-  "conviction": "High",
+  "top_held": "VNQ",
+  "ann_return": 0.192337,
+  "z_score": 1.3945,
+  "sharpe": 0.6872,
+  "max_dd": -0.149161,
+  "conviction": "Moderate",
   "lookback": 20,
   "start_year": 2021,
   "sweep_date": "20260313"

@@ -1,0 +1,12 @@
+{
+  "signal": "HYG",
+  "top_held": "GLD",
+  "ann_return": 0.827222,
+  "z_score": 1.7626,
+  "sharpe": 2.2354,
+  "max_dd": -0.101064,
+  "conviction": "High",
+  "lookback": 20,
+  "start_year": 2021,
+  "sweep_date": "20260320"
+}

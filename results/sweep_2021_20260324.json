@@ -1,0 +1,12 @@
+{
+  "signal": "VCIT",
+  "top_held": "GLD",
+  "ann_return": 0.498121,
+  "z_score": 1.4684,
+  "sharpe": 1.7969,
+  "max_dd": -0.104537,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2021,
+  "sweep_date": "20260324"
+}

@@ -1,4 +1,5 @@
 # app.py — P2-ETF-DQN-ENGINE  Streamlit UI
+# Supports both Option A (FI/Commodities) and Option B (Equity Sectors).
 
 import json
 import os
@@ -15,46 +16,23 @@ import config
 
 SWEEP_YEARS    = [2008, 2013, 2015, 2017, 2019, 2021]
 WORKFLOW_FILE  = "train_models.yml"
-ETF_COLORS = {
+
+# Colour maps for both universes
+FI_COLOURS = {
     "TLT": "#4e79a7", "VCIT": "#f28e2b", "LQD": "#59a14f",
     "HYG": "#e15759", "VNQ": "#76b7b2", "SLV": "#edc948",
     "GLD": "#b07aa1", "CASH": "#aaaaaa",
 }
+EQ_COLOURS = {
+    "SPY": "#4e79a7", "QQQ": "#f28e2b", "XLK": "#59a14f",
+    "XLF": "#e15759", "XLE": "#76b7b2", "XLV": "#edc948",
+    "XLI": "#b07aa1", "XLY": "#ff9da7", "XLP": "#9c755f",
+    "XLU": "#86b875", "GDX": "#bab0ac", "XME": "#f1ce63",
+    "CASH": "#aaaaaa",
+}
 
-# ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="P2 ETF DQN Engine",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-st.markdown("""
-<style>
-.main { background-color: #ffffff; color: #1a1a1a; }
-div[data-testid="stMetric"] {
-    background: #f8f9fa; border: 1px solid #e9ecef;
-    border-radius: 10px; padding: 15px;
-}
-[data-testid="stMetricValue"] { color: #0066cc !important; font-size: 26px !important; font-weight: 700 !important; }
-[data-testid="stMetricLabel"] { color: #6c757d !important; font-size: 11px !important; text-transform: uppercase; }
-.hero-card {
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-    border: 2px solid #0066cc; border-radius: 16px;
-    padding: 32px; text-align: center; margin-bottom: 24px;
-}
-.hero-label { color: #6c757d; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; }
-.hero-value { color: #0066cc; font-size: 72px; font-weight: 900; margin: 8px 0; line-height: 1; }
-.hero-sub   { color: #495057; font-size: 14px; margin-top: 8px; }
-.cash-card  {
-    background: linear-gradient(135deg, #fff8f0 0%, #ffe4cc 100%);
-    border: 2px solid #cc6600; border-radius: 16px;
-    padding: 32px; text-align: center; margin-bottom: 24px;
-}
-.provenance { background: #f8f9fa; border-left: 4px solid #0066cc; padding: 10px 16px;
-              border-radius: 4px; font-size: 13px; color: #6c757d; margin-top: 8px; }
-.method-box { background: #ffffff; border: 1px solid #dee2e6; border-radius: 12px; padding: 20px; }
-</style>
-""", unsafe_allow_html=True)
+def get_colour_map(option: str) -> dict:
+    return FI_COLOURS if option == 'a' else EQ_COLOURS
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -135,11 +113,11 @@ def _today_est() -> date:
     return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
 
 
-def _sweep_filename(year: int, for_date: date) -> str:
+def _sweep_filename(year: int, for_date: date, option: str) -> str:
     return f"sweep_{year}_{for_date.strftime('%Y%m%d')}.json"
 
 
-def _load_sweep_cache(for_date: date) -> dict:
+def _load_sweep_cache(for_date: date, option: str) -> dict:
     """Load date-stamped sweep files from HF Dataset."""
     cache = {}
     try:
@@ -149,8 +127,9 @@ def _load_sweep_cache(for_date: date) -> dict:
         date_tag = for_date.strftime("%Y%m%d")
         for yr in SWEEP_YEARS:
             fname = f"sweep_{yr}_{date_tag}.json"
+            remote_path = f"sweep/option_{option}/{fname}" if option != 'a' else f"sweep/{fname}"
             try:
-                path = hf_hub_download(repo_id=repo_id, filename=f"sweep/{fname}",
+                path = hf_hub_download(repo_id=repo_id, filename=remote_path,
                                        repo_type="dataset", token=token, force_download=True)
                 with open(path) as f:
                     cache[yr] = json.load(f)
@@ -161,7 +140,7 @@ def _load_sweep_cache(for_date: date) -> dict:
     return cache
 
 
-def _load_sweep_cache_any() -> tuple:
+def _load_sweep_cache_any(option: str) -> tuple:
     """Load most recent sweep files from HF Dataset regardless of date. Returns (cache, date)."""
     found, best_date = {}, None
     try:
@@ -169,12 +148,15 @@ def _load_sweep_cache_any() -> tuple:
         token   = os.getenv("HF_TOKEN")
         repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
         api     = HfApi()
+        prefix = "sweep/option_" if option != 'a' else "sweep/"
         files   = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
-        # Find most recent date across all sweep files
+        # Find most recent date across all sweep files for this option
         for fname in files:
-            fname = os.path.basename(fname)
-            if fname.startswith("sweep_") and fname.endswith(".json"):
-                parts = fname.replace(".json","").split("_")
+            if not fname.startswith(prefix):
+                continue
+            bn = os.path.basename(fname)
+            if bn.startswith("sweep_") and bn.endswith(".json"):
+                parts = bn.replace(".json","").split("_")
                 if len(parts) == 3:
                     try:
                         dt = datetime.strptime(parts[2], "%Y%m%d").date()
@@ -186,8 +168,9 @@ def _load_sweep_cache_any() -> tuple:
             date_tag = best_date.strftime("%Y%m%d")
             for yr in SWEEP_YEARS:
                 fname = f"sweep_{yr}_{date_tag}.json"
+                remote_path = f"sweep/option_{option}/{fname}" if option != 'a' else f"sweep/{fname}"
                 try:
-                    path = hf_hub_download(repo_id=repo_id, filename=f"sweep/{fname}",
+                    path = hf_hub_download(repo_id=repo_id, filename=remote_path,
                                            repo_type="dataset", token=token, force_download=True)
                     with open(path) as f:
                         found[yr] = json.load(f)
@@ -262,6 +245,10 @@ def _compute_consensus(sweep_data: dict) -> dict:
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
 
+    option = st.radio("Select Option", ["Option A (FI/Commodities)", "Option B (Equity Sectors)"],
+                      index=0, horizontal=True)
+    opt_code = 'a' if "Option A" in option else 'b'
+
     if st.button("🔄 Refresh Data & Clear Cache"):
         st.cache_data.clear()
         st.toast("Cache cleared — reloading...")
@@ -271,16 +258,16 @@ with st.sidebar:
     st.markdown("### 📅 Training Parameters")
     st.caption("Changes here require retraining via GitHub Actions.")
 
-    start_year = st.slider("Start Year", config.START_YEAR_MIN if hasattr(config, "START_YEAR_MIN") else 2008,
-                           2024, 2015)
-    fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10)
+    start_year = st.slider("Start Year", config.DEFAULT_START_YEAR,
+                           2024, 2015, key=f"start_{opt_code}")
+    fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10, key=f"fee_{opt_code}")
 
     st.divider()
     st.markdown("### 🛡️ Risk Controls")
     st.caption("Instant — no retraining needed.")
 
-    tsl_pct   = st.slider("Trailing Stop Loss (%)", 5.0, 25.0, 10.0, 0.5)
-    z_reentry = st.slider("Re-entry Z-Score Threshold", 0.5, 3.0, 1.1, 0.1)
+    tsl_pct   = st.slider("Trailing Stop Loss (%)", 5.0, 25.0, 10.0, 0.5, key=f"tsl_{opt_code}")
+    z_reentry = st.slider("Re-entry Z-Score Threshold", 0.5, 3.0, 1.1, 0.1, key=f"z_{opt_code}")
 
     st.divider()
     run_btn = st.button("🚀 Retrain DQN Agent",
@@ -308,9 +295,11 @@ with st.sidebar:
     st.caption(f"↑ Trains from {start_year} onwards · 200 episodes (hardcoded in train_models.yml)")
 
 
-# ── Load outputs ──────────────────────────────────────────────────────────────
-pred  = _load_json("latest_prediction.json")
-evalu = _load_json("evaluation_results.json")
+# ── Load outputs for selected option ──────────────────────────────────────────
+pred_file = f"latest_prediction_{opt_code}.json"
+eval_file = f"evaluation_results_{opt_code}.json"
+pred  = _load_json(pred_file)
+evalu = _load_json(eval_file)
 
 next_td          = _next_trading_day()
 final_signal     = pred.get("final_signal", "—")
@@ -340,7 +329,7 @@ tab1, tab2 = st.tabs(["📊 Single-Year Results", "🔄 Multi-Year Consensus Swe
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — Single-Year Results (existing content)
+# TAB 1 — Single-Year Results
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
 
@@ -375,7 +364,7 @@ with tab1:
 
     if in_cash or not pred:
         st.markdown(f"""
-        <div class="cash-card">
+        <div class="cash-card" style="background: linear-gradient(135deg, #fff8f0 0%, #ffe4cc 100%); border: 2px solid #cc6600; border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px;">
           <div class="hero-label">⚠️ Risk Override Active · {td_label}</div>
           <div class="hero-value" style="color:#cc6600;">💵 CASH</div>
           <div class="hero-sub">
@@ -389,9 +378,9 @@ with tab1:
             prov_str = (f"📋 Trained from {trained_from_year} · "
                         f"Generated {trained_at[:10]} · Z-Score {z_score:.2f}σ")
         st.markdown(f"""
-        <div class="hero-card">
+        <div class="hero-card" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #0066cc; border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px;">
           <div class="hero-label">Dueling DQN · {td_label}</div>
-          <div class="hero-value">{final_signal}</div>
+          <div class="hero-value" style="color:#0066cc;">{final_signal}</div>
           <div class="hero-sub">
             🎯 {next_td} &nbsp;|&nbsp; Confidence {float(confidence):.1%}
             &nbsp;|&nbsp; Z-Score {float(z_score):.2f}σ
@@ -490,12 +479,12 @@ with tab1:
     if evalu and "allocation_pct" in evalu:
         st.subheader("📊 Allocation Breakdown (Test Set)")
         alloc = evalu["allocation_pct"]
+        colour_map = get_colour_map(opt_code)
         fig3  = go.Figure(go.Pie(
             labels=list(alloc.keys()),
             values=list(alloc.values()),
             hole=0.45,
-            marker_colors=["#0066cc","#28a745","#ffc107","#fd7e14",
-                           "#6f42c1","#e83e8c","#17a2b8","#adb5bd"],
+            marker_colors=[colour_map.get(e, "#888") for e in alloc.keys()],
         ))
         fig3.update_layout(
             paper_bgcolor="#ffffff", font_color="#1a1a1a",
@@ -552,7 +541,7 @@ with tab1:
 
     st.markdown("---")
 
-    # ── Methodology Section ───────────────────────────────────────────────────────
+    # ── Methodology Section (unchanged) ───────────────────────────────────────────
     st.subheader("🧠 Methodology")
     st.markdown("""
     <div class="method-box">
@@ -644,7 +633,7 @@ with tab1:
 # TAB 2 — Multi-Year Consensus Sweep
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
-    st.subheader("🔄 Multi-Year Consensus Sweep")
+    st.subheader(f"🔄 Multi-Year Consensus Sweep — {option}")
     st.markdown(
         f"Runs the DQN agent across **{len(SWEEP_YEARS)} start years** and aggregates signals "
         f"into a weighted consensus vote.  \n"
@@ -656,9 +645,8 @@ with tab2:
     today_est = _today_est()
 
     # ── Load today's cache ────────────────────────────────────────────────────
-    today_cache  = _load_sweep_cache(today_est)
-    prev_cache, prev_date = _load_sweep_cache_any()
-    # Separate prev from today
+    today_cache  = _load_sweep_cache(today_est, opt_code)
+    prev_cache, prev_date = _load_sweep_cache_any(opt_code)
     if prev_date == today_est:
         prev_cache, prev_date = {}, None
 
@@ -761,7 +749,8 @@ with tab2:
 
     winner    = consensus["winner"]
     w_info    = consensus["etf_summary"][winner]
-    win_color = ETF_COLORS.get(winner, "#0066cc")
+    colour_map = get_colour_map(opt_code)
+    win_color = colour_map.get(winner, "#0066cc")
     score_pct = w_info["score_share"] * 100
     score_pct = score_pct if (score_pct == score_pct) else 0.0  # guard nan
     split_sig = w_info["score_share"] < 0.40
@@ -810,7 +799,7 @@ with tab2:
                     key=lambda x: -x[1]["cum_score"])
     parts = []
     for etf, v in others:
-        c = ETF_COLORS.get(etf, "#888")
+        c = colour_map.get(etf, "#888")
         parts.append(f'<span style="color:{c};font-weight:600;">{etf}</span> '
                      f'<span style="color:#aaa;">({v["cum_score"]:.2f} · {v["n_years"]}yr)</span>')
     st.markdown(
@@ -830,7 +819,7 @@ with tab2:
         fig_bar = go.Figure(go.Bar(
             x=sorted_etfs,
             y=[es[e]["cum_score"] for e in sorted_etfs],
-            marker_color=[ETF_COLORS.get(e, "#888") for e in sorted_etfs],
+            marker_color=[colour_map.get(e, "#888") for e in sorted_etfs],
             text=[f"{es[e]['n_years']}yr · {es[e]['score_share']*100 if es[e]['score_share']==es[e]['score_share'] else 0:.0f}%<br>{es[e]['cum_score']:.2f}"
                   for e in sorted_etfs],
             textposition="outside",
@@ -848,7 +837,7 @@ with tab2:
         fig_sc = go.Figure()
         for row in per_year:
             etf = row["signal"]
-            col = ETF_COLORS.get(etf, "#888")
+            col = colour_map.get(etf, "#888")
             fig_sc.add_trace(go.Scatter(
                 x=[row["year"]], y=[row["z_score"]],
                 mode="markers+text",
@@ -896,7 +885,7 @@ with tab2:
     tbl_df = pd.DataFrame(tbl_rows)
 
     def _style_sig(val):
-        c = ETF_COLORS.get(val, "#888")
+        c = colour_map.get(val, "#888")
         return f"background-color:{c}22;color:{c};font-weight:700;"
 
     def _style_ret(val):

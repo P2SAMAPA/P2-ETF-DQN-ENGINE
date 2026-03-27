@@ -120,9 +120,7 @@ def _load_sweep_cache(for_date: date, option: str) -> dict:
         token   = os.getenv("HF_TOKEN")
         repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
         date_tag = for_date.strftime("%Y%m%d")
-        # We'll list years from the available files – no hardcoded list
-        # We'll assume the sweep files are stored under sweep/option_{option}/sweep_{year}_{date_tag}.json
-        # We'll attempt to download for each year in a wide range (2008-2025)
+        # We'll try to load for years 2008-2025
         for yr in range(2008, 2026):
             fname = f"sweep_{yr}_{date_tag}.json"
             remote_path = f"sweep/option_{option}/{fname}" if option != 'a' else f"sweep/{fname}"
@@ -320,12 +318,244 @@ tab1, tab2 = st.tabs(["📊 Single-Year Results", "🔄 Multi-Year Consensus Swe
 # TAB 1 — Single-Year Results
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    # ... (unchanged from previous version) ...
-    # To keep the answer concise, I'll skip repeating the full tab1 here.
-    # It should be the same as in the last version we had.
-    # For the final answer, I'll include the entire file with tab1 as before.
-    # Since the user only requested changes to the sweep tab, I'll assume tab1 is identical.
-    # I'll provide the full file later.
+    # ── Provenance banner ─────────────────────────────────────────────────────────
+    if trained_from_year and trained_at:
+        trained_date = trained_at[:10]
+        st.markdown(
+            f'<div class="provenance">📋 Active model trained from '
+            f'<b>{trained_from_year}</b> · Generated <b>{trained_date}</b> · '
+            f'Val Sharpe <b>{evalu.get("sharpe", "—")}</b></div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("⚠️ No trained model found. Click **🚀 Retrain DQN Agent** to train.")
+
+    st.markdown("---")
+
+    # ── TSL override banner ───────────────────────────────────────────────────────
+    if tsl_triggered:
+        st.markdown(f"""
+        <div style="background:#fff8f0;border:2px solid #cc6600;border-radius:10px;
+                    padding:16px;margin-bottom:16px;">
+          🔴 <b>TRAILING STOP LOSS TRIGGERED</b> — 2-day return
+          ({float(two_day_ret):+.1f}%) breached −{tsl_pct:.0f}% threshold.
+          Holding CASH @ {tbill_rt:.2f}% T-bill until Z ≥ {z_reentry:.1f}σ.
+        </div>""", unsafe_allow_html=True)
+
+    # ── Signal Hero Card ──────────────────────────────────────────────────────────
+    now_est  = datetime.utcnow() - timedelta(hours=5)
+    is_today = (next_td == now_est.date())
+    td_label = "TODAY'S SIGNAL" if is_today else "NEXT TRADING DAY"
+
+    if in_cash or not pred:
+        st.markdown(f"""
+        <div class="cash-card" style="background: linear-gradient(135deg, #fff8f0 0%, #ffe4cc 100%); border: 2px solid #cc6600; border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px;">
+          <div class="hero-label">⚠️ Risk Override Active · {td_label}</div>
+          <div class="hero-value" style="color:#cc6600;">💵 CASH</div>
+          <div class="hero-sub">
+            Earning 3m T-bill: <b>{tbill_rt:.2f}% p.a.</b> &nbsp;|&nbsp;
+            Re-entry when Z ≥ {z_reentry:.1f}σ
+          </div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        prov_str = ""
+        if trained_from_year and trained_at:
+            prov_str = (f"📋 Trained from {trained_from_year} · "
+                        f"Generated {trained_at[:10]} · Z-Score {z_score:.2f}σ")
+        st.markdown(f"""
+        <div class="hero-card" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #0066cc; border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px;">
+          <div class="hero-label">Dueling DQN · {td_label}</div>
+          <div class="hero-value" style="color:#0066cc;">{final_signal}</div>
+          <div class="hero-sub">
+            🎯 {next_td} &nbsp;|&nbsp; Confidence {float(confidence):.1%}
+            &nbsp;|&nbsp; Z-Score {float(z_score):.2f}σ
+          </div>
+          {"<div class='hero-sub' style='margin-top:6px;font-size:12px;opacity:0.7;'>" + prov_str + "</div>" if prov_str else ""}
+        </div>""", unsafe_allow_html=True)
+
+    # ── Key Metrics ───────────────────────────────────────────────────────────────
+    if evalu:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Ann. Return",   f"{evalu.get('ann_return', 0):.1%}")
+        c2.metric("Sharpe Ratio",  f"{evalu.get('sharpe', 0):.2f}")
+        c3.metric("Max Drawdown",  f"{evalu.get('max_drawdown', 0):.1%}")
+        c4.metric("Calmar Ratio",  f"{evalu.get('calmar', 0):.2f}")
+        c5.metric("Hit Ratio",     f"{evalu.get('hit_ratio', 0):.1%}")
+
+        # Benchmark comparison — ann return
+        bench_ann = evalu.get("benchmark_ann", {})
+        if bench_ann:
+            bc1, bc2  = st.columns(2)
+            strat_ann = evalu.get("ann_return", 0)
+            for col, (k, v) in zip([bc1, bc2], bench_ann.items()):
+                delta = strat_ann - v
+                col.metric(f"{k} Ann. Return", f"{v:.1%}",
+                           delta=f"{delta:+.1%} vs strategy")
+
+    st.markdown("---")
+
+    # ── Q-Value / Probability Bar Chart ──────────────────────────────────────────
+    if probs:
+        st.subheader("📊 Action Probabilities (Softmax Q-Values)")
+        actions = list(probs.keys())
+        values  = [probs[a] for a in actions]
+        colours = ["#cc6600" if a == "CASH" else
+                   "#0066cc" if a == final_signal else "#6c757d"
+                   for a in actions]
+
+        fig = go.Figure(go.Bar(
+            x=actions, y=values,
+            marker_color=colours,
+            text=[f"{v:.1%}" for v in values],
+            textposition="outside",
+        ))
+        fig.update_layout(
+            paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
+            font_color="#1a1a1a",
+            yaxis_title="Probability", xaxis_title="Action",
+            height=300, margin=dict(t=20, b=20),
+            yaxis=dict(gridcolor="#e9ecef"),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            "**How to read:** Each bar is the agent's probability of choosing that action today, "
+            "derived from softmax of the DQN Q-values. 🔵 Blue = chosen action. 🟠 Orange = CASH. "
+            "Grey = rejected. A dominant bar = high conviction. Similar-height bars = low conviction / uncertain signal."
+        )
+
+    # ── Equity Curve ──────────────────────────────────────────────────────────────
+    if evalu and "equity_curve" in evalu:
+        st.subheader("📈 Test-Set Equity Curve vs Benchmarks")
+        st.caption("Normalised to 1.0 at start of test period. SPY and AGG shown for comparison.")
+        equity     = evalu["equity_curve"]
+        test_dates = evalu.get("test_dates", [])
+        x_axis     = test_dates if len(test_dates) == len(equity) else list(range(len(equity)))
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(
+            x=x_axis, y=equity, mode="lines", name="DQN Strategy",
+            line=dict(color="#0066cc", width=2.5),
+        ))
+
+        # SPY and AGG from json — no load_local needed
+        bench_equity = evalu.get("benchmark_equity", {})
+        bench_colours = {"SPY": "#e63946", "AGG": "#2a9d8f"}
+        for b, beq in bench_equity.items():
+            bx = test_dates if len(test_dates) == len(beq) else list(range(len(beq)))
+            fig2.add_trace(go.Scatter(
+                x=bx, y=beq, mode="lines", name=b,
+                line=dict(width=1.5, dash="dot", color=bench_colours.get(b, "#888888")),
+            ))
+
+        fig2.update_layout(
+            paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
+            font_color="#1a1a1a", height=420,
+            yaxis_title="Normalised Equity (start = 1.0)",
+            xaxis_title="Date",
+            legend=dict(bgcolor="#f8f9fa", orientation="h",
+                        yanchor="bottom", y=1.02, xanchor="left", x=0),
+            yaxis=dict(gridcolor="#e9ecef", tickformat=".2f"),
+            xaxis=dict(tickangle=-45, nticks=12, gridcolor="#e9ecef"),
+            margin=dict(t=40, b=60),
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Allocation Breakdown ──────────────────────────────────────────────────────
+    if evalu and "allocation_pct" in evalu:
+        st.subheader("📊 Allocation Breakdown (Test Set)")
+        alloc = evalu["allocation_pct"]
+        colour_map = get_colour_map(opt_code)
+        fig3  = go.Figure(go.Pie(
+            labels=list(alloc.keys()),
+            values=list(alloc.values()),
+            hole=0.45,
+            marker_colors=[colour_map.get(e, "#888") for e in alloc.keys()],
+        ))
+        fig3.update_layout(
+            paper_bgcolor="#ffffff", font_color="#1a1a1a",
+            height=320, margin=dict(t=20),
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+        st.caption(
+            "**How to read:** Percentage of out-of-sample (OOS) test days the agent held each position. "
+            "A well-trained agent rotates across ETFs. Heavy concentration in one slice (80%+) = "
+            "agent defaulted to a single-asset strategy — sign of poor learning."
+        )
+
+    st.markdown("---")
+
+    # ── 15-Day Audit Trail ────────────────────────────────────────────────────────
+    if evalu and "allocations" in evalu and len(evalu["allocations"]) > 0:
+        st.subheader("🗓️ 15-Day Audit Trail — Most Recent OOS Days")
+        st.caption("Last 15 trading days from the out-of-sample test period.")
+
+        allocs     = evalu["allocations"]
+        eq_curve   = evalu.get("equity_curve", [])
+        test_dates = evalu.get("test_dates", [])
+
+        daily_rets = []
+        if len(eq_curve) > 1:
+            for i in range(1, len(eq_curve)):
+                daily_rets.append(eq_curve[i] / eq_curve[i-1] - 1)
+
+        n_show      = min(15, len(allocs))
+        last_allocs = allocs[-n_show:]
+        last_rets   = daily_rets[-n_show:]   if daily_rets   else [0.0] * n_show
+        last_equity = eq_curve[-n_show:]     if eq_curve     else [1.0] * n_show
+        last_dates  = test_dates[-n_show:]   if len(test_dates) >= n_show else [f"Day {i+1}" for i in range(n_show)]
+
+        audit_df = pd.DataFrame({
+            "Date"      : last_dates,
+            "Allocation": last_allocs,
+            "Daily Ret" : last_rets,
+            "Equity"    : last_equity,
+        })
+
+        def _colour_ret(val):
+            color = "#d93025" if val < 0 else "#188038"
+            return f"color: {color}; font-weight: bold"
+
+        styled = (
+            audit_df.style
+            .format({"Daily Ret": "{:+.2%}", "Equity": "{:.4f}"})
+            .applymap(_colour_ret, subset=["Daily Ret"])
+            .set_properties(**{"text-align": "center"})
+            .hide(axis="index")
+        )
+        st.dataframe(styled, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Methodology Section (shortened) ───────────────────────────────────────────
+    st.subheader("🧠 Methodology")
+    st.markdown("""
+    **Dueling DQN** for ETF rotation, extending **Yasin & Gill (2024)**.
+
+    - **Multi-asset action space** – CASH + 7 ETFs (Option A) or 12 ETFs (Option B)  
+    - **Macro state augmentation** – VIX, yield curve slope, T-bill rate, USD index, credit spreads  
+    - **Reward** = excess daily return over T-bill, minus transaction cost, scaled by inverse realised volatility  
+    - **Training** – 80/10/10 train/val/test split; best model selected by validation Sharpe; Double DQN; experience replay; ε‑greedy decay  
+    - **Risk controls** – trailing stop loss (overrides to CASH) + Z‑score re‑entry threshold  
+
+    📄 **References**  
+    - Yasin, A.S. & Gill, P.S. (2024). *Reinforcement Learning Framework for Quantitative Trading*. [arXiv:2411.07585](https://arxiv.org/abs/2411.07585)  
+    - Wang, Z. et al. (2016). *Dueling Network Architectures for Deep Reinforcement Learning*. ICML 2016.
+    """, unsafe_allow_html=True)
+
+    # ── Reference ─────────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;
+                padding:14px;font-size:12px;color:#6c757d;margin-top:8px;">
+    <b>Reference:</b> Yasin, A.S. & Gill, P.S. (2024).
+    <i>Reinforcement Learning Framework for Quantitative Trading.</i>
+    arXiv:2411.07585 [q-fin.TR]. Accepted at ICAIF 2024 FM4TS Workshop.
+    &nbsp;·&nbsp;
+    <b>Dueling DQN:</b> Wang, Z. et al. (2016).
+    <i>Dueling Network Architectures for Deep Reinforcement Learning.</i>
+    ICML 2016.
+    </div>
+    """, unsafe_allow_html=True)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — Multi-Year Consensus Sweep

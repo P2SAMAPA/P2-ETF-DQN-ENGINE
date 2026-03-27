@@ -1,8 +1,7 @@
 # env.py
 # Custom Gym-style trading environment for the Dueling DQN agent.
-# Now supports dynamic action space based on provided ETF list.
 # State  : flattened lookback window of technical indicators + macro
-# Actions: 0=CASH, 1..N = ETF indices (based on provided actions list)
+# Actions: 0=CASH, 1..N = ETF indices (maps to provided action list)
 # Reward : excess return over T-bill - transaction cost on switches,
 #          scaled by inverse realised volatility to penalise drawdowns
 
@@ -21,24 +20,24 @@ class ETFTradingEnv:
     feat_df      : pd.DataFrame — full feature matrix (one row per trading day)
     price_df     : pd.DataFrame — ETF close prices aligned to feat_df index
     macro_df     : pd.DataFrame — macro data (for TBILL_3M fallback)
-    actions      : list — action names: first element must be "CASH", then ETF tickers
     start_idx    : int — first index to start an episode from
     end_idx      : int — last index (exclusive)
     fee_pct      : float — one-way transaction cost as fraction (e.g. 0.001 = 10bps)
     lookback     : int — window size fed as state
     tsl_pct      : float — trailing stop loss % (applied post-signal in backtest)
+    action_names : list — list of ETF names (including CASH as first element)
     """
 
     def __init__(self,
                  feat_df:   pd.DataFrame,
                  price_df:  pd.DataFrame,
                  macro_df:  pd.DataFrame,
-                 actions:   list,                     # NEW: dynamic action list
                  start_idx: int   = 0,
                  end_idx:   int   = None,
                  fee_pct:   float = config.DEFAULT_FEE_BPS / 10_000,
                  lookback:  int   = config.LOOKBACK_WINDOW,
-                 tsl_pct:   float = config.DEFAULT_TSL_PCT / 100):
+                 tsl_pct:   float = config.DEFAULT_TSL_PCT / 100,
+                 action_names: list = None):
 
         self.feat_df   = feat_df.reset_index(drop=True)
         self.price_df  = price_df.reindex(feat_df.index).reset_index(drop=True)
@@ -46,8 +45,14 @@ class ETFTradingEnv:
         self.fee_pct   = fee_pct
         self.lookback  = lookback
         self.tsl_pct   = tsl_pct
-        self.actions   = actions
-        self.n_actions = len(actions)
+
+        # Action space
+        if action_names is None:
+            # Default: Option A (existing)
+            self.actions = config.ACTIONS
+        else:
+            self.actions = action_names
+        self.n_actions = len(self.actions)
 
         self.start_idx = max(start_idx, lookback - 1)
         self.end_idx   = end_idx if end_idx is not None else len(self.feat_df) - 1
@@ -59,6 +64,7 @@ class ETFTradingEnv:
     # ── Gym-style interface ───────────────────────────────────────────────────
 
     def reset(self) -> np.ndarray:
+        # FIX: randomise start within first 50% of window so agent sees diverse sequences
         max_rand = self.start_idx + (self.end_idx - self.start_idx) // 2
         self.current_idx    = int(np.random.randint(self.start_idx, max(self.start_idx + 1, max_rand)))
         self.held_action    = 0          # start in CASH
@@ -109,11 +115,13 @@ class ETFTradingEnv:
                 self.is_stopped_out = True
 
         # ── Risk-adjusted reward ──────────────────────────────────────────────
+        # FIX: clamp vol so CASH (vol~0.005) doesn't get 30x reward amplification
         tbill_daily = self._get_tbill(prev_idx) / 252
         excess_ret  = day_ret - tbill_daily
         vol_21d     = self._get_vol(action, prev_idx)
         vol_scale   = float(np.clip(vol_21d, config.REWARD_VOL_MIN, config.REWARD_VOL_MAX))
         reward      = excess_ret / vol_scale
+        # FIX: small bonus when ETF (not CASH) beats T-bill — discourage CASH collapse
         if action != 0 and excess_ret > 0:
             reward *= config.REWARD_ETF_BONUS
 
@@ -126,11 +134,13 @@ class ETFTradingEnv:
 
     @property
     def observation_size(self) -> int:
+        # FIX: +n_actions for one-hot position encoding appended to state
         return self.n_features + self.n_actions
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _get_state(self) -> np.ndarray:
+        """Return flattened lookback window + one-hot current position."""
         start = self.current_idx - self.lookback + 1
         end   = self.current_idx + 1
         window = self.feat_df.iloc[start:end].values.astype(np.float32)
@@ -138,41 +148,45 @@ class ETFTradingEnv:
             pad    = np.zeros((self.lookback - len(window), self.feat_df.shape[1]),
                               dtype=np.float32)
             window = np.vstack([pad, window])
+        # FIX: append one-hot current position so agent knows what it is holding
         position = np.zeros(self.n_actions, dtype=np.float32)
         position[self.held_action] = 1.0
         return np.concatenate([window.flatten(), position])
 
     def _get_tbill(self, idx: int) -> float:
+        """Annual T-bill rate at given index (fraction)."""
         if "macro_TBILL_3M" in self.macro_df.columns:
             val = self.macro_df["macro_TBILL_3M"].iloc[idx]
             if not np.isnan(val):
                 return float(val) / 100.0
-        return 0.036
+        return 0.036   # fallback 3.6%
 
     def _get_vol(self, action: int, idx: int) -> float:
+        """21d annualised vol for scaling reward."""
         if action == 0:
-            return 0.005
+            return 0.005   # CASH ~ zero vol
         etf     = self.actions[action]
         vol_col = f"{etf}_Vol21d"
         if vol_col in self.feat_df.columns:
             val = self.feat_df[vol_col].iloc[idx]
             if not np.isnan(val) and val > 0:
                 return float(val)
-        return 0.15
+        return 0.15   # fallback 15% vol
 
 
-# ── Train / Val / Test splitter (now accepts etf_list) ────────────────────────
+# ── Train / Val / Test splitter ───────────────────────────────────────────────
 
 def make_splits(feat_df: pd.DataFrame,
                 price_df: pd.DataFrame,
                 macro_df: pd.DataFrame,
                 start_year: int,
-                actions: list,                     # NEW
                 fee_pct: float = config.DEFAULT_FEE_BPS / 10_000,
-                lookback:  int = config.LOOKBACK_WINDOW):
+                lookback:  int = config.LOOKBACK_WINDOW,
+                action_names: list = None):
     """
     Returns three ETFTradingEnv instances: train, val, test.
     Split is 80/10/10 of the date range from start_year onwards.
+    If action_names is provided, use that list; otherwise default to config.ACTIONS.
     """
     # Filter by start year
     mask     = feat_df.index.year >= start_year
@@ -184,14 +198,17 @@ def make_splits(feat_df: pd.DataFrame,
 
     train_env = ETFTradingEnv(feat_sub.iloc[:n_train],
                               price_df, macro_df,
-                              actions=actions, fee_pct=fee_pct, lookback=lookback)
+                              fee_pct=fee_pct, lookback=lookback,
+                              action_names=action_names)
 
     val_env   = ETFTradingEnv(feat_sub.iloc[n_train : n_train + n_val],
                               price_df, macro_df,
-                              actions=actions, fee_pct=fee_pct, lookback=lookback)
+                              fee_pct=fee_pct, lookback=lookback,
+                              action_names=action_names)
 
     test_env  = ETFTradingEnv(feat_sub.iloc[n_train + n_val:],
                               price_df, macro_df,
-                              actions=actions, fee_pct=fee_pct, lookback=lookback)
+                              fee_pct=fee_pct, lookback=lookback,
+                              action_names=action_names)
 
     return train_env, val_env, test_env

@@ -28,7 +28,7 @@ on:
         default: ""
 
 jobs:
-  # ── Midnight wipe — deletes previous day's sweep cache files for both options ──
+  # ── Midnight wipe — deletes previous day's sweep cache files ────────────────
   wipe_sweep_cache:
     if: >
       github.event_name == 'schedule' &&
@@ -46,18 +46,11 @@ jobs:
           from datetime import datetime, timezone, timedelta
           today = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%Y%m%d")
           deleted = 0
-          # Delete both root sweep files (old format) and per-option sweep files
-          for f in glob.glob("results/sweep_*.json"):
+          for f in glob.glob("results/option_*/sweep_*.json"):
               if today not in f:
                   os.remove(f)
                   print(f"Deleted: {f}")
                   deleted += 1
-          for opt in ["a", "b"]:
-              for f in glob.glob(f"results/option_{opt}/sweep_*.json"):
-                  if today not in f:
-                      os.remove(f)
-                      print(f"Deleted: {f}")
-                      deleted += 1
           print(f"Wiped {deleted} stale sweep cache files")
           EOF
       - name: Commit wipe
@@ -68,7 +61,7 @@ jobs:
           git diff --cached --quiet || git commit -m "[auto] Wipe stale sweep cache $(date -u +%Y-%m-%d)"
           git push || true
 
-  # ── Single-year train for Option A ───────────────────────────────────────────
+  # ── Single-year train — manual or daily auto ─────────────────────────────────
   train_a:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
@@ -78,7 +71,6 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -144,8 +136,7 @@ jobs:
         run: |
           START_YEAR="${{ github.event.inputs.start_year }}"
           START_YEAR="${START_YEAR:-2015}"
-          # Adaptive episodes: earlier years have more data per episode
-          if   [ "$START_YEAR" -le 2010 ]; then EPISODES=150
+          if [ "$START_YEAR" -le 2010 ]; then EPISODES=150
           elif [ "$START_YEAR" -le 2013 ]; then EPISODES=200
           elif [ "$START_YEAR" -le 2015 ]; then EPISODES=220
           elif [ "$START_YEAR" -le 2017 ]; then EPISODES=250
@@ -201,14 +192,15 @@ jobs:
                   path_in_repo=f"data/{os.path.basename(f)}",
                   path_or_fileobj=f))
 
-          for f in ["models/dqn_best.pt", "models/training_summary.json"]:
+          # Option A model files
+          for f in glob.glob("models/dqn_best.pt") + glob.glob("models/training_summary.json"):
               if os.path.exists(f):
-                  ops.append(CommitOperationAdd(path_in_repo=f"models/{os.path.basename(f)}", path_or_fileobj=f))
+                  ops.append(CommitOperationAdd(path_in_repo=f"models/option_a/{os.path.basename(f)}", path_or_fileobj=f))
 
-          # Also push result jsons so deploy workflow can read them from HF Dataset
+          # Option A result jsons
           for f in ["evaluation_results_a.json", "latest_prediction_a.json"]:
               if os.path.exists(f):
-                  ops.append(CommitOperationAdd(path_in_repo=f"results/{f}", path_or_fileobj=f))
+                  ops.append(CommitOperationAdd(path_in_repo=f"results/option_a/{f}", path_or_fileobj=f))
 
           if ops:
               api.create_commit(
@@ -227,15 +219,12 @@ jobs:
           git add evaluation_results_a.json latest_prediction_a.json \
                   models/training_summary.json results/ 2>/dev/null || true
           git diff --cached --quiet || \
-            git commit -m "[auto] DQN results (option a) — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
+            git commit -m "[auto] DQN results (a) — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
           git push || true
 
       - name: Done
-        run: |
-          echo "✅ DQN training pipeline complete (Option A)."
-          echo "   start_year : ${{ github.event.inputs.start_year }}"
+        run: echo "✅ DQN training pipeline complete for Option A."
 
-  # ── Single-year train for Option B ───────────────────────────────────────────
   train_b:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
@@ -245,7 +234,6 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -311,7 +299,7 @@ jobs:
         run: |
           START_YEAR="${{ github.event.inputs.start_year }}"
           START_YEAR="${START_YEAR:-2015}"
-          if   [ "$START_YEAR" -le 2010 ]; then EPISODES=150
+          if [ "$START_YEAR" -le 2010 ]; then EPISODES=150
           elif [ "$START_YEAR" -le 2013 ]; then EPISODES=200
           elif [ "$START_YEAR" -le 2015 ]; then EPISODES=220
           elif [ "$START_YEAR" -le 2017 ]; then EPISODES=250
@@ -367,13 +355,15 @@ jobs:
                   path_in_repo=f"data/{os.path.basename(f)}",
                   path_or_fileobj=f))
 
-          for f in ["models/option_b/dqn_best.pt", "models/option_b/training_summary.json"]:
+          # Option B model files
+          for f in glob.glob("models/option_b/dqn_best.pt") + glob.glob("models/option_b/training_summary.json"):
               if os.path.exists(f):
-                  ops.append(CommitOperationAdd(path_in_repo=f, path_or_fileobj=f))
+                  ops.append(CommitOperationAdd(path_in_repo=f"models/option_b/{os.path.basename(f)}", path_or_fileobj=f))
 
+          # Option B result jsons
           for f in ["evaluation_results_b.json", "latest_prediction_b.json"]:
               if os.path.exists(f):
-                  ops.append(CommitOperationAdd(path_in_repo=f"results/{f}", path_or_fileobj=f))
+                  ops.append(CommitOperationAdd(path_in_repo=f"results/option_b/{f}", path_or_fileobj=f))
 
           if ops:
               api.create_commit(
@@ -390,25 +380,33 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add evaluation_results_b.json latest_prediction_b.json \
-                  models/option_b/training_summary.json results/ 2>/dev/null || true
+                  models/training_summary.json results/ 2>/dev/null || true
           git diff --cached --quiet || \
-            git commit -m "[auto] DQN results (option b) — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
+            git commit -m "[auto] DQN results (b) — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
           git push || true
 
       - name: Done
-        run: |
-          echo "✅ DQN training pipeline complete (Option B)."
-          echo "   start_year : ${{ github.event.inputs.start_year }}"
+        run: echo "✅ DQN training pipeline complete for Option B."
 
-  # ── Sweep jobs for Option A (one per year) ──────────────────────────────────
-  sweep_2008_a:
+
+  # ── Sweep job templates (one per year, each run for both options) ──────────
+  # Note: We'll duplicate each year job into two (option a and option b) for clarity.
+  # To avoid repeating the same steps 12 times, we can use matrix strategy.
+  # But matrix for each year + option would be 6×2 = 12 jobs. Let's do matrix.
+
+  sweep:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2008'))
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.sweep_mode != '')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2008, 2013, 2015, 2017, 2019, 2021]
+        option: [a, b]
     env:
       HF_TOKEN:        ${{ secrets.HF_TOKEN }}
       HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
@@ -424,617 +422,45 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python smoke_test.py
       - run: python data_download.py --mode incremental
-      - run: python train.py --option a --start_year 2008 --episodes 150 --fee_bps 10
-      - run: python evaluate.py --option a --start_year 2008 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option a --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option A)
+      - name: Set episodes
         run: |
-          python3 - <<'PYEOF'
+          YEAR=${{ matrix.year }}
+          if [ "$YEAR" -le 2010 ]; then EPISODES=150
+          elif [ "$YEAR" -le 2013 ]; then EPISODES=200
+          elif [ "$YEAR" -le 2015 ]; then EPISODES=220
+          elif [ "$YEAR" -le 2017 ]; then EPISODES=250
+          elif [ "$YEAR" -le 2019 ]; then EPISODES=280
+          else EPISODES=300
+          fi
+          echo "EPISODES=$EPISODES" >> $GITHUB_ENV
+      - run: python train.py --option ${{ matrix.option }} --start_year ${{ matrix.year }} --episodes $EPISODES --fee_bps 10
+      - run: python evaluate.py --option ${{ matrix.option }} --start_year ${{ matrix.year }} --fee_bps 10 --tsl 10 --z 1.1
+      - run: python predict.py --option ${{ matrix.option }} --tsl 10 --z 1.1
+      - name: Push sweep result to HF Dataset
+        run: |
+          python3 - <<'EOF'
           import os, json, glob
           from huggingface_hub import HfApi, CommitOperationAdd
           token   = os.environ["HF_TOKEN"]
           repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+          option  = "${{ matrix.option }}"
+          year    = "${{ matrix.year }}"
           api     = HfApi()
           ops     = []
-          # Push sweep files from results/option_a/
-          for f in glob.glob("results/option_a/sweep_*.json"):
+          for f in glob.glob(f"results/option_{option}/sweep_{year}_*.json"):
               fname = os.path.basename(f)
               with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_a/{fname}", path_or_fileobj=fh.read()))
+                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_{option}/{fname}", path_or_fileobj=fh.read()))
           if ops:
               api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option a): {[o.path_in_repo for o in ops]}")
+                                operations=ops, commit_message=f"Sweep results: {option}/{year}")
               print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option A)
+          EOF
+      - name: Commit sweep results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase || true
-          git add results/option_a/ evaluation_results_a.json latest_prediction_a.json models/option_a/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2008 (option a) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2013_a:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2013'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 300
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option a --start_year 2013 --episodes 200 --fee_bps 10
-      - run: python evaluate.py --option a --start_year 2013 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option a --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option A)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_a/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_a/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option a): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option A)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_a/ evaluation_results_a.json latest_prediction_a.json models/option_a/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2013 (option a) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2015_a:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2015'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 270
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option a --start_year 2015 --episodes 220 --fee_bps 10
-      - run: python evaluate.py --option a --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option a --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option A)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_a/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_a/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option a): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option A)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_a/ evaluation_results_a.json latest_prediction_a.json models/option_a/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2015 (option a) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2017_a:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2017'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option a --start_year 2017 --episodes 250 --fee_bps 10
-      - run: python evaluate.py --option a --start_year 2017 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option a --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option A)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_a/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_a/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option a): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option A)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_a/ evaluation_results_a.json latest_prediction_a.json models/option_a/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2017 (option a) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2019_a:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2019'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 210
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option a --start_year 2019 --episodes 280 --fee_bps 10
-      - run: python evaluate.py --option a --start_year 2019 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option a --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option A)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_a/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_a/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option a): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option A)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_a/ evaluation_results_a.json latest_prediction_a.json models/option_a/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2019 (option a) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2021_a:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2021'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option a --start_year 2021 --episodes 300 --fee_bps 10
-      - run: python evaluate.py --option a --start_year 2021 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option a --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option A)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_a/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_a/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option a): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option A)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_a/ evaluation_results_a.json latest_prediction_a.json models/option_a/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2021 (option a) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  # ── Sweep jobs for Option B (one per year) ──────────────────────────────────
-  sweep_2008_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2008'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option b --start_year 2008 --episodes 150 --fee_bps 10
-      - run: python evaluate.py --option b --start_year 2008 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option b --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option B)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_b/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_b/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option b): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option B)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_b/ evaluation_results_b.json latest_prediction_b.json models/option_b/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2008 (option b) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2013_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2013'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 300
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option b --start_year 2013 --episodes 200 --fee_bps 10
-      - run: python evaluate.py --option b --start_year 2013 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option b --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option B)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_b/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_b/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option b): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option B)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_b/ evaluation_results_b.json latest_prediction_b.json models/option_b/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2013 (option b) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2015_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2015'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 270
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option b --start_year 2015 --episodes 220 --fee_bps 10
-      - run: python evaluate.py --option b --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option b --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option B)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_b/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_b/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option b): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option B)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_b/ evaluation_results_b.json latest_prediction_b.json models/option_b/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2015 (option b) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2017_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2017'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option b --start_year 2017 --episodes 250 --fee_bps 10
-      - run: python evaluate.py --option b --start_year 2017 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option b --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option B)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_b/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_b/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option b): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option B)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_b/ evaluation_results_b.json latest_prediction_b.json models/option_b/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2017 (option b) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2019_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2019'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 210
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option b --start_year 2019 --episodes 280 --fee_bps 10
-      - run: python evaluate.py --option b --start_year 2019 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option b --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option B)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_b/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_b/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option b): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option B)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_b/ evaluation_results_b.json latest_prediction_b.json models/option_b/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2019 (option b) $(date -u +%Y-%m-%d)"
-          git push || true
-
-  sweep_2021_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.sweep_mode, '2021'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    permissions:
-      contents: write
-    env:
-      HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-      HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-      FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: python smoke_test.py
-      - run: python data_download.py --mode incremental
-      - run: python train.py --option b --start_year 2021 --episodes 300 --fee_bps 10
-      - run: python evaluate.py --option b --start_year 2021 --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option b --tsl 10 --z 1.1
-      - name: Push sweep result to HF Dataset (Option B)
-        run: |
-          python3 - <<'PYEOF'
-          import os, json, glob
-          from huggingface_hub import HfApi, CommitOperationAdd
-          token   = os.environ["HF_TOKEN"]
-          repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-          api     = HfApi()
-          ops     = []
-          for f in glob.glob("results/option_b/sweep_*.json"):
-              fname = os.path.basename(f)
-              with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_b/{fname}", path_or_fileobj=fh.read()))
-          if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results (option b): {[o.path_in_repo for o in ops]}")
-              print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
-          PYEOF
-      - name: Commit sweep results (Option B)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-          git add results/option_b/ evaluation_results_b.json latest_prediction_b.json models/option_b/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "[auto] Sweep 2021 (option b) $(date -u +%Y-%m-%d)"
+          git add results/ evaluation_results_${{ matrix.option }}.json latest_prediction_${{ matrix.option }}.json models/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "[auto] Sweep ${{ matrix.year }} ${{ matrix.option }} $(date -u +%Y-%m-%d)"
           git push || true

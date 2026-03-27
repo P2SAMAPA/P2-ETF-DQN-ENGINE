@@ -34,6 +34,11 @@ def get_colour_map(option: str) -> dict:
     return FI_COLOURS if option == 'a' else EQ_COLOURS
 
 
+# ── Define variables (will be updated by sidebar) ───────────────────────────
+option = "Option A (FI/Commodities)"   # default
+opt_code = 'a'
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_json(path: str) -> dict:
@@ -231,6 +236,7 @@ def _compute_consensus(sweep_data: dict) -> dict:
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
 
+    # Override the global variables with user selection
     option = st.radio("Select Option", ["Option A (FI/Commodities)", "Option B (Equity Sectors)"],
                       index=0, horizontal=True)
     opt_code = 'a' if "Option A" in option else 'b'

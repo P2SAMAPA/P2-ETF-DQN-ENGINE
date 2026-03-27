@@ -58,18 +58,25 @@ jobs:
               print(f"Pushed {len(ops)} parquet file(s) to HF Dataset")
           EOF
 
-      - name: Run prediction with latest weights
+      - name: Run prediction for Option A
         env:
           HF_TOKEN:        ${{ secrets.HF_TOKEN }}
           HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
           FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-        run: python predict.py
+        run: python predict.py --option a
 
-      - name: Commit prediction to GitHub
+      - name: Run prediction for Option B
+        env:
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+        run: python predict.py --option b
+
+      - name: Commit predictions to GitHub
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add latest_prediction.json || true
+          git add latest_prediction_a.json latest_prediction_b.json || true
           git diff --cached --quiet || \
-            git commit -m "[auto] Daily prediction $(date -u +%Y-%m-%d)"
+            git commit -m "[auto] Daily predictions $(date -u +%Y-%m-%d)"
           git push || true

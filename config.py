@@ -13,16 +13,35 @@ HF_TOKEN        = os.getenv("HF_TOKEN", "")
 FRED_API_KEY    = os.getenv("FRED_API_KEY", "")
 GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN", "")
 
-# ── ETF Universe ──────────────────────────────────────────────────────────────
-ETFS            = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "GLD", "SLV"]
+# ── ETF Universes ──────────────────────────────────────────────────────────────
+# Option A: Fixed Income / Commodities (existing)
+OPTION_A_ETFS = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "GLD", "SLV"]
+
+# Option B: Equity Sectors (new)
+OPTION_B_ETFS = [
+    "SPY", "QQQ", "XLK", "XLF", "XLE", "XLV",
+    "XLI", "XLY", "XLP", "XLU", "GDX", "XME"
+]
+
+# Combined list for data fetching (all tickers)
+ALL_TICKERS = OPTION_A_ETFS + OPTION_B_ETFS + ["SPY", "AGG"]  # benchmarks already in ALL_TICKERS? SPY is also in Option B, but that's fine.
+
+# Action spaces:
+# Option A: 0=CASH, 1..7 = OPTION_A_ETFS
+ACTIONS_A = ["CASH"] + OPTION_A_ETFS          # len = 8
+N_ACTIONS_A = len(ACTIONS_A)
+
+# Option B: 0=CASH, 1..12 = OPTION_B_ETFS
+ACTIONS_B = ["CASH"] + OPTION_B_ETFS          # len = 13
+N_ACTIONS_B = len(ACTIONS_B)
+
+# Keep backward compatibility (for existing code that expects ETFS, ACTIONS, N_ACTIONS)
+ETFS            = OPTION_A_ETFS   # for backward compatibility
+ACTIONS         = ACTIONS_A       # for backward compatibility
+N_ACTIONS       = N_ACTIONS_A     # for backward compatibility
 BENCHMARKS      = ["SPY", "AGG"]
-ALL_TICKERS     = ETFS + BENCHMARKS
 
-# ── Action Space: 0=CASH, 1..7 = ETFs ────────────────────────────────────────
-ACTIONS         = ["CASH"] + ETFS          # len = 8
-N_ACTIONS       = len(ACTIONS)             # 8
-
-# ── FRED Macro Series ─────────────────────────────────────────────────────────
+# ── FRED Macro Series (unchanged) ─────────────────────────────────────────────
 MACRO_SERIES = {
     "VIX"        : "VIXCLS",
     "T10Y2Y"     : "T10Y2Y",
@@ -36,8 +55,8 @@ MACRO_SERIES = {
 SEED_START          = "2008-01-01"
 DEFAULT_START_YEAR  = 2008
 
-# ── Feature Engineering ───────────────────────────────────────────────────────
-LOOKBACK_WINDOW = 20          # days of history fed into DQN state
+# ── Feature Engineering (unchanged) ───────────────────────────────────────────
+LOOKBACK_WINDOW = 20
 RSI_PERIOD      = 14
 MACD_FAST       = 12
 MACD_SLOW       = 26
@@ -49,35 +68,34 @@ CMO_PERIOD      = 14
 ATR_PERIOD      = 14
 BBANDS_PERIOD   = 20
 
-# ── Dueling DQN Hyperparameters ───────────────────────────────────────────────
+# ── Dueling DQN Hyperparameters (unchanged) ───────────────────────────────────
 HIDDEN_UNITS        = 256
-LEARNING_RATE       = 0.0005        # FIX: reduced from 0.001
-GAMMA               = 0.99          # discount factor
+LEARNING_RATE       = 0.0005
+GAMMA               = 0.99
 EPSILON_START       = 1.0
-EPSILON_END         = 0.10          # FIX: was 0.05
-EPSILON_DECAY_FRAC  = 0.80          # FIX: was 0.50 decay over 80% not 50%
+EPSILON_END         = 0.10
+EPSILON_DECAY_FRAC  = 0.80
 REPLAY_BUFFER_SIZE  = 100_000
 BATCH_SIZE          = 64
-TARGET_UPDATE_FREQ  = 1             # FIX: soft Polyak update every step
-TAU                 = 0.005         # FIX: Polyak factor
-MIN_REPLAY_SIZE     = 1_000         # steps before training starts
-DEFAULT_EPISODES    = 500           # FIX: was 300
+TARGET_UPDATE_FREQ  = 1
+TAU                 = 0.005
+MIN_REPLAY_SIZE     = 1_000
+DEFAULT_EPISODES    = 500
 
-# Reward shaping
-REWARD_VOL_MIN      = 0.05          # FIX: min vol floor prevents CASH 30x amplification
-REWARD_VOL_MAX      = 0.40          # FIX: max vol ceiling
-REWARD_ETF_BONUS    = 1.10          # FIX: bonus when ETF beats T-bill
+# Reward shaping (unchanged)
+REWARD_VOL_MIN      = 0.05
+REWARD_VOL_MAX      = 0.40
+REWARD_ETF_BONUS    = 1.10
 
-# ── Risk Controls (defaults — overridden by UI sliders) ───────────────────────
-DEFAULT_TSL_PCT     = 10.0          # trailing stop loss %
-DEFAULT_Z_REENTRY   = 1.1           # z-score to re-enter from CASH
-DEFAULT_FEE_BPS     = 10            # transaction cost in basis points
+# ── Risk Controls (defaults) ──────────────────────────────────────────────────
+DEFAULT_TSL_PCT     = 10.0
+DEFAULT_Z_REENTRY   = 1.1
+DEFAULT_FEE_BPS     = 10
 
-# ── Train/Val/Test Split ──────────────────────────────────────────────────────
+# ── Train/Val/Test Split (unchanged) ──────────────────────────────────────────
 TRAIN_SPLIT     = 0.80
 VAL_SPLIT       = 0.10
-# TEST = remaining 0.10
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# ── Paths (unchanged) ─────────────────────────────────────────────────────────
 MODELS_DIR      = "models"
 DATA_DIR        = "data"

@@ -23,7 +23,7 @@ on:
         required: false
         default: "1.1"
       sweep_mode:
-        description: "Comma-separated sweep years e.g. 2008,2013,2015,2017,2019,2021 (blank = single year)"
+        description: "Comma-separated sweep years e.g. 2008,2013,2015,2017,2019,2021 (blank = run all years)"
         required: false
         default: ""
 
@@ -61,8 +61,11 @@ jobs:
           git diff --cached --quiet || git commit -m "[auto] Wipe stale sweep cache $(date -u +%Y-%m-%d)"
           git push || true
 
-  # ── Single-year train — manual or daily auto ─────────────────────────────────
-  train_a:
+  # ── Single-year train (manual or daily auto) ─────────────────────────────────
+  # This runs when a specific year is requested (sweep_mode blank or not set)
+  # It will run the train, evaluate, predict for that year and upload results.
+  # The single-year job is kept for backward compatibility but not needed for full sweep.
+  train:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
       (github.event_name == 'workflow_dispatch' &&
@@ -71,6 +74,7 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -222,75 +226,6 @@ jobs:
             git commit -m "[auto] DQN results (a) — start_year=${{ github.event.inputs.start_year }} $(date -u +%Y-%m-%d)"
           git push || true
 
-      - name: Done
-        run: echo "✅ DQN training pipeline complete for Option A."
-
-  train_b:
-    if: >
-      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' &&
-       (github.event.inputs.sweep_mode == '' || github.event.inputs.sweep_mode == null))
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Download latest data from HF Dataset
-        env:
-          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-        run: |
-          python - <<'EOF'
-          import os, shutil
-          from huggingface_hub import hf_hub_download
-
-          HF_TOKEN        = os.getenv("HF_TOKEN", "")
-          HF_DATASET_REPO = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-
-          os.makedirs("data", exist_ok=True)
-          for f in ["etf_prices", "macro"]:
-              try:
-                  path = hf_hub_download(
-                      repo_id=HF_DATASET_REPO,
-                      filename=f"data/{f}.parquet",
-                      repo_type="dataset",
-                      token=HF_TOKEN,
-                  )
-                  shutil.copy(path, f"data/{f}.parquet")
-                  print(f"  ✓ data/{f}.parquet")
-              except Exception as e:
-                  print(f"  Warning: {f}: {e}")
-          EOF
-
-      - name: Incremental data update (catch up to today)
-        env:
-          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-        run: python data_download.py --mode incremental
-
-      - name: Smoke test (fast pre-flight checks — fails fast before wasting training time)
-        env:
-          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
-          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
-          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
-        run: python smoke_test.py
-
       - name: Train Dueling DQN Agent (Option B)
         env:
           HF_TOKEN:        ${{ secrets.HF_TOKEN }}
@@ -386,18 +321,16 @@ jobs:
           git push || true
 
       - name: Done
-        run: echo "✅ DQN training pipeline complete for Option B."
+        run: echo "✅ DQN training pipeline complete for both options."
 
-
-  # ── Sweep job templates (one per year, each run for both options) ──────────
-  # Note: We'll duplicate each year job into two (option a and option b) for clarity.
-  # To avoid repeating the same steps 12 times, we can use matrix strategy.
-  # But matrix for each year + option would be 6×2 = 12 jobs. Let's do matrix.
-
+  # ── Sweep job template (one per year, all run in parallel) ──────────────────
+  # This runs when sweep_mode is provided (comma-separated years) OR when
+  # sweep_mode is blank (run all years). This ensures a manual dispatch with
+  # empty sweep_mode will generate results for all years.
   sweep:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.sweep_mode != '')
+      (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -405,7 +338,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        year: [2008, 2013, 2015, 2017, 2019, 2021]
+        year: [2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
         option: [a, b]
     env:
       HF_TOKEN:        ${{ secrets.HF_TOKEN }}
@@ -433,9 +366,12 @@ jobs:
           else EPISODES=300
           fi
           echo "EPISODES=$EPISODES" >> $GITHUB_ENV
-      - run: python train.py --option ${{ matrix.option }} --start_year ${{ matrix.year }} --episodes $EPISODES --fee_bps 10
-      - run: python evaluate.py --option ${{ matrix.option }} --start_year ${{ matrix.year }} --fee_bps 10 --tsl 10 --z 1.1
-      - run: python predict.py --option ${{ matrix.option }} --tsl 10 --z 1.1
+      - name: Train for year ${{ matrix.year }} (option ${{ matrix.option }})
+        run: python train.py --option ${{ matrix.option }} --start_year ${{ matrix.year }} --episodes $EPISODES --fee_bps 10
+      - name: Evaluate for year ${{ matrix.year }} (option ${{ matrix.option }})
+        run: python evaluate.py --option ${{ matrix.option }} --start_year ${{ matrix.year }} --fee_bps 10 --tsl 10 --z 1.1
+      - name: Predict for year ${{ matrix.year }} (option ${{ matrix.option }})
+        run: python predict.py --option ${{ matrix.option }} --tsl 10 --z 1.1
       - name: Push sweep result to HF Dataset
         run: |
           python3 - <<'EOF'

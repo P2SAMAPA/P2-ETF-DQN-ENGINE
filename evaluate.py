@@ -1,12 +1,13 @@
 # evaluate.py
 # Runs backtest on test set, computes performance vs SPY/AGG benchmarks.
 # Usage:
-#   python evaluate.py --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
+#   python evaluate.py --option a --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
+#   python evaluate.py --option b --start_year 2015 --fee_bps 10 --tsl 10 --z 1.1
 
 import argparse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -17,9 +18,31 @@ from features import build_features
 from env import make_splits
 from agent import DQNAgent
 
-WEIGHTS_PATH = os.path.join(config.MODELS_DIR, "dqn_best.pt")
-SUMMARY_PATH = os.path.join(config.MODELS_DIR, "training_summary.json")
-EVAL_PATH    = "evaluation_results.json"
+
+# ── Helper to get action list for a given option ─────────────────────────────
+
+def get_action_names(option: str) -> list:
+    if option == 'a':
+        etfs = config.ETFS
+    elif option == 'b':
+        etfs = config.OPTION_B_ETFS
+    else:
+        raise ValueError(f"Unknown option: {option}")
+    return ["CASH"] + etfs
+
+
+def get_model_dir(option: str) -> str:
+    base = config.MODELS_DIR
+    if option == 'a':
+        return base
+    else:
+        return os.path.join(base, f"option_{option}")
+
+
+def _q_zscore(q_vals: np.ndarray) -> np.ndarray:
+    mu  = q_vals.mean()
+    std = q_vals.std() + 1e-9
+    return (q_vals - mu) / std
 
 
 def _sharpe(rets: np.ndarray, tbill: float = 0.036) -> float:
@@ -37,17 +60,29 @@ def _calmar(ann_ret: float, max_dd: float) -> float:
     return ann_ret / (abs(max_dd) + 1e-9)
 
 
-def run_backtest(start_year: int,
+def run_backtest(option: str,
+                 start_year: int,
                  fee_bps:    int   = config.DEFAULT_FEE_BPS,
                  tsl_pct:    float = config.DEFAULT_TSL_PCT,
                  z_reentry:  float = config.DEFAULT_Z_REENTRY) -> dict:
 
+    # Option-specific paths
+    model_dir = get_model_dir(option)
+    weights_path = os.path.join(model_dir, "dqn_best.pt")
+    eval_path = f"evaluation_results_{option}.json"
+    results_dir = "results"
+    os.makedirs(results_dir, exist_ok=True)
+
+    action_names = get_action_names(option)
+    etf_list = action_names[1:]   # exclude CASH
+
     print(f"\n{'='*60}")
     print(f"  P2-ETF-DQN-ENGINE — Evaluation")
-    print(f"  Start year : {start_year}")
+    print(f"  Option      : {option.upper()} ({len(etf_list)} ETFs)")
+    print(f"  Start year  : {start_year}")
     print(f"{'='*60}")
 
-    # ── Load ──────────────────────────────────────────────────────────────────
+    # ── Load data ─────────────────────────────────────────────────────────────
     data = load_local()
     if not data:
         raise RuntimeError("No local data. Run data_download.py first.")
@@ -55,18 +90,20 @@ def run_backtest(start_year: int,
     etf_prices = data["etf_prices"]
     macro      = data["macro"]
 
-    feat_df = build_features(etf_prices, macro, start_year=start_year)
+    # Build features using the correct ETF list
+    feat_df = build_features(etf_prices, macro, start_year=start_year, etf_list=etf_list)
 
     fee_pct = fee_bps / 10_000
+    # make_splits now accepts action_names parameter
     _, _, test_env = make_splits(feat_df, etf_prices, macro, start_year,
-                                 fee_pct=fee_pct)
+                                 fee_pct=fee_pct, action_names=action_names)
 
     # ── Load agent ────────────────────────────────────────────────────────────
-    agent = DQNAgent(state_size=test_env.observation_size)
-    agent.load(WEIGHTS_PATH)
+    agent = DQNAgent(state_size=test_env.observation_size, n_actions=len(action_names))
+    agent.load(weights_path)
 
     # ── Backtest with TSL ─────────────────────────────────────────────────────
-    # FIX: force reset to start_idx (not random) for deterministic evaluation
+    # Force reset to start_idx (not random) for deterministic evaluation
     test_env.current_idx    = test_env.start_idx
     test_env.held_action    = 0
     test_env.peak_equity    = 1.0
@@ -106,7 +143,7 @@ def run_backtest(start_year: int,
                 is_stopped  = True
 
         rets.append(info["day_ret"])
-        allocations.append(config.ACTIONS[action])
+        allocations.append(action_names[action])
         q_vals_log.append(q_values.tolist())
         equity_curve.append(eq)
         state = next_state
@@ -142,6 +179,7 @@ def run_backtest(start_year: int,
     alloc_counts = pd.Series(allocations).value_counts(normalize=True).to_dict()
 
     results = dict(
+        option           = option,
         start_year       = start_year,
         evaluated_at     = datetime.now().isoformat(),
         n_test_days      = n_days,
@@ -161,27 +199,25 @@ def run_backtest(start_year: int,
         fee_bps          = fee_bps,
         tsl_pct          = tsl_pct,
         z_reentry        = z_reentry,
+        lookback         = config.LOOKBACK_WINDOW,
     )
 
-    with open(EVAL_PATH, "w") as f:
+    with open(eval_path, "w") as f:
         json.dump(results, f, indent=2)
 
     # ── Write date-stamped sweep cache if this is a sweep year ────────────────
     sweep_years = [2008, 2013, 2015, 2017, 2019, 2021]
     if start_year in sweep_years:
-        from datetime import timezone
         today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
 
-        # Z-score from the LAST step's Q-values (already computed during backtest)
-        # This is always available — no dependency on predict.py running first
-        last_q = np.array(q_vals_log[-1]) if q_vals_log else np.zeros(len(config.ACTIONS))
+        # Z-score from the LAST step's Q-values
+        last_q = np.array(q_vals_log[-1]) if q_vals_log else np.zeros(len(action_names))
         last_z_arr = _q_zscore(last_q)
         last_action_idx = int(last_q.argmax())
-        z_val = float(last_z_arr[last_action_idx])
-        z_val = z_val if np.isfinite(z_val) else 0.0
+        z_val = float(last_z_arr[last_action_idx]) if np.isfinite(last_z_arr[last_action_idx]) else 0.0
 
         # Next signal = the last day's chosen action
-        next_signal = config.ACTIONS[last_action_idx] if allocations else "CASH"
+        next_signal = action_names[last_action_idx] if allocations else "CASH"
 
         conviction = ("Very High" if z_val >= 2.0 else
                       "High"      if z_val >= 1.5 else
@@ -199,12 +235,11 @@ def run_backtest(start_year: int,
             "sharpe":     round(sharpe,  4),
             "max_dd":     round(max_dd,  6),
             "conviction": conviction,
-            "lookback":   results.get("lookback", config.LOOKBACK_WINDOW),
+            "lookback":   config.LOOKBACK_WINDOW,
             "start_year": start_year,
             "sweep_date": today_str,
         }
-        os.makedirs("results", exist_ok=True)
-        sweep_fname = os.path.join("results", f"sweep_{start_year}_{today_str}.json")
+        sweep_fname = os.path.join(results_dir, f"sweep_{option}_{start_year}_{today_str}.json")
         with open(sweep_fname, "w") as sf:
             json.dump(sweep_payload, sf, indent=2)
         print(f"  Sweep cache saved → {sweep_fname}")
@@ -216,23 +251,25 @@ def run_backtest(start_year: int,
     print(f"  Calmar Ratio : {calmar:.3f}")
     print(f"  Hit Ratio    : {hit:.1%}")
     print(f"  Benchmarks   : {bench}")
-    print(f"\n  Results saved → {EVAL_PATH}")
+    print(f"\n  Results saved → {eval_path}")
 
     return results
 
 
-def _q_zscore(q_vals: np.ndarray) -> np.ndarray:
-    mu  = q_vals.mean()
-    std = q_vals.std() + 1e-9
-    return (q_vals - mu) / std
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--option", choices=["a", "b"], default="a",
+                        help="Option to evaluate: a (FI/Commodities) or b (Equity)")
     parser.add_argument("--start_year", type=int, default=config.DEFAULT_START_YEAR)
     parser.add_argument("--fee_bps",    type=int, default=config.DEFAULT_FEE_BPS)
     parser.add_argument("--tsl",        type=float, default=config.DEFAULT_TSL_PCT)
     parser.add_argument("--z",          type=float, default=config.DEFAULT_Z_REENTRY)
     args = parser.parse_args()
 
-    run_backtest(args.start_year, args.fee_bps, args.tsl, args.z)
+    run_backtest(
+        option     = args.option,
+        start_year = args.start_year,
+        fee_bps    = args.fee_bps,
+        tsl_pct    = args.tsl,
+        z_reentry  = args.z,
+    )

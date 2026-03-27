@@ -1,0 +1,12 @@
+{
+  "signal": "XLK",
+  "top_held": "XLE",
+  "ann_return": -0.128551,
+  "z_score": 1.3288,
+  "sharpe": -0.8612,
+  "max_dd": -0.113743,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2021,
+  "sweep_date": "20260327"
+}

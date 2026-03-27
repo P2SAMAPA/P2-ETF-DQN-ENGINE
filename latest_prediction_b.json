@@ -1,0 +1,47 @@
+{
+  "option": "b",
+  "as_of_date": "2026-03-27",
+  "final_signal": "XLK",
+  "final_confidence": 0.1043,
+  "z_score": 1.344,
+  "q_values": {
+    "CASH": 0.9947,
+    "SPY": 0.953,
+    "QQQ": 0.9921,
+    "XLK": 1.0151,
+    "XLF": 0.9432,
+    "XLE": 0.945,
+    "XLV": 0.9966,
+    "XLI": 0.9517,
+    "XLY": 0.9938,
+    "XLP": 1.0024,
+    "XLU": 1.0097,
+    "GDX": 0.9982,
+    "XME": 0.9656
+  },
+  "probabilities": {
+    "CASH": 0.0851,
+    "SPY": 0.0561,
+    "QQQ": 0.0829,
+    "XLK": 0.1043,
+    "XLF": 0.0508,
+    "XLE": 0.0518,
+    "XLV": 0.0867,
+    "XLI": 0.0553,
+    "XLY": 0.0844,
+    "XLP": 0.092,
+    "XLU": 0.0989,
+    "GDX": 0.0881,
+    "XME": 0.0636
+  },
+  "tbill_rate": 3.63,
+  "tsl_status": {
+    "two_day_cumul_pct": -2.68,
+    "tsl_triggered": false,
+    "in_cash": false,
+    "z_reentry": 1.1,
+    "tsl_pct": 10.0
+  },
+  "trained_from_year": 2021,
+  "trained_at": "2026-03-27T09:58:26.751901"
+}

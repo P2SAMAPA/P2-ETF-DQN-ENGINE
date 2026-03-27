@@ -10,8 +10,8 @@
 #   - MLP policy (paper showed MLP > LSTM for daily ETF data)
 #   - Separate Value and Advantage streams (Dueling — better for multi-action spaces)
 #   - Experience replay buffer (100k transitions)
-#   - Hard target network update every TARGET_UPDATE_FREQ steps
-#   - epsilon-greedy exploration: 1.0 → 0.05 over first 50% of training
+#   - Soft Polyak target network update (τ = TAU)
+#   - epsilon-greedy exploration: 1.0 → EPSILON_END over first fraction of steps
 
 import os
 import random
@@ -108,7 +108,7 @@ class ReplayBuffer:
 
 class DQNAgent:
     def __init__(self, state_size: int,
-                 n_actions:  int   = config.N_ACTIONS,
+                 n_actions:  int,
                  lr:         float = config.LEARNING_RATE,
                  gamma:      float = config.GAMMA,
                  eps_start:  float = config.EPSILON_START,
@@ -203,8 +203,7 @@ class DQNAgent:
         return float(loss.item())
 
     def _update_target(self):
-        # FIX: soft Polyak update instead of hard copy
-        # target = TAU * online + (1-TAU) * target — much more stable training
+        # Soft Polyak update: target = TAU * online + (1-TAU) * target
         for p_on, p_tgt in zip(self.online_net.parameters(),
                                 self.target_net.parameters()):
             p_tgt.data.copy_(

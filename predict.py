@@ -1,5 +1,6 @@
 # predict.py
 # Generates next-trading-day ETF signal from saved DQN weights.
+# Supports Option A and Option B via --option.
 # Usage:
 #   python predict.py --option a --tsl 10 --z 1.1
 #   python predict.py --option b --tsl 10 --z 1.1
@@ -20,7 +21,6 @@ from agent import DQNAgent
 
 
 def get_action_names(option: str) -> list:
-    """Return action names for the given option."""
     if option == 'a':
         etfs = config.ETFS
     elif option == 'b':
@@ -31,16 +31,11 @@ def get_action_names(option: str) -> list:
 
 
 def get_model_dir(option: str) -> str:
-    """Return the subdirectory for the given option."""
     base = config.MODELS_DIR
     if option == 'a':
         return base
     else:
         return os.path.join(base, f"option_{option}")
-
-
-def get_summary_path(option: str) -> str:
-    return os.path.join(get_model_dir(option), "training_summary.json")
 
 
 def next_trading_day(from_date=None) -> date:
@@ -59,7 +54,6 @@ def next_trading_day(from_date=None) -> date:
                 return d
     except Exception:
         pass
-    # Fallback: weekend skip only
     d = (from_date or date.today()) + timedelta(days=1)
     while d.weekday() >= 5:
         d += timedelta(days=1)
@@ -87,34 +81,20 @@ def download_from_hf(option: str):
                                      filename=f"data/{f}.parquet",
                                      repo_type="dataset", token=token)
                 shutil.copy(dl, os.path.join(config.DATA_DIR, f"{f}.parquet"))
+                print(f"  ✓ data/{f}.parquet")
             except Exception as e:
                 print(f"  data/{f}: {e}")
 
-        # For Option A, weights are in models/; for Option B, in models/option_b/
-        if option == 'a':
-            remote_model_path = "models/dqn_best.pt"
-            remote_summary_path = "models/training_summary.json"
-        else:
-            remote_model_path = "models/option_b/dqn_best.pt"
-            remote_summary_path = "models/option_b/training_summary.json"
-
-        try:
-            dl = hf_hub_download(repo_id=config.HF_DATASET_REPO,
-                                 filename=remote_model_path,
-                                 repo_type="dataset", token=token)
-            shutil.copy(dl, os.path.join(model_dir, "dqn_best.pt"))
-            print(f"  ✓ {remote_model_path}")
-        except Exception as e:
-            print(f"  {remote_model_path}: {e}")
-
-        try:
-            dl = hf_hub_download(repo_id=config.HF_DATASET_REPO,
-                                 filename=remote_summary_path,
-                                 repo_type="dataset", token=token)
-            shutil.copy(dl, os.path.join(model_dir, "training_summary.json"))
-            print(f"  ✓ {remote_summary_path}")
-        except Exception as e:
-            print(f"  {remote_summary_path}: {e}")
+        for f in ["dqn_best.pt", "training_summary.json"]:
+            try:
+                remote_path = f"models/{f}" if option == 'a' else f"models/option_{option}/{f}"
+                dl = hf_hub_download(repo_id=config.HF_DATASET_REPO,
+                                     filename=remote_path,
+                                     repo_type="dataset", token=token)
+                shutil.copy(dl, os.path.join(model_dir, f))
+                print(f"  ✓ {remote_path}")
+            except Exception as e:
+                print(f"  {remote_path}: {e}")
     except Exception as e:
         print(f"  HF download failed: {e}")
 
@@ -124,16 +104,8 @@ def run_predict(option: str,
                 z_reentry: float = config.DEFAULT_Z_REENTRY) -> dict:
 
     print(f"\n{'='*60}")
-    print(f"  Predict — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Option: {option.upper()}")
+    print(f"  Predict — Option {option.upper()} · {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
-
-    action_names = get_action_names(option)
-    etf_list = action_names[1:]
-    n_actions = len(action_names)
-    model_dir = get_model_dir(option)
-    weights_path = os.path.join(model_dir, "dqn_best.pt")
-    summary_path = get_summary_path(option)
 
     # ── Ensure data + weights ─────────────────────────────────────────────────
     data = load_local()
@@ -145,6 +117,8 @@ def run_predict(option: str,
         print("  ERROR: No data available.")
         return {}
 
+    weights_path = os.path.join(get_model_dir(option), "dqn_best.pt")
+    summary_path = os.path.join(get_model_dir(option), "training_summary.json")
     if not os.path.exists(weights_path):
         print("  No local weights — downloading from HF...")
         download_from_hf(option)
@@ -162,23 +136,55 @@ def run_predict(option: str,
         trained_from_year = summary.get("start_year")
         trained_at        = summary.get("trained_at")
         lookback          = summary.get("lookback", config.LOOKBACK_WINDOW)
+        print(f"  Loaded training summary: start_year={trained_from_year}, lookback={lookback}")
 
-    # ── Build features using correct ETF list ─────────────────────────────────
+    action_names = get_action_names(option)
+    n_actions = len(action_names)
+    etf_list = action_names[1:]
+
+    # ── Build features ────────────────────────────────────────────────────────
     etf_prices = data["etf_prices"]
     macro      = data["macro"]
-    feat_df    = build_features(etf_prices, macro, etf_list=etf_list)
+
+    # Check macro data
+    if macro is None or macro.empty:
+        print("  WARNING: Macro data is empty. Will attempt to re-download.")
+        download_from_hf(option)
+        data = load_local()
+        macro = data["macro"] if data else None
+
+    # Check that all expected ETFs are present
+    missing_etfs = [t for t in etf_list if t not in etf_prices.columns]
+    if missing_etfs:
+        print(f"  WARNING: Missing ETFs in price data: {missing_etfs}")
+        print("  This will reduce the feature count and cause a state size mismatch.")
+        print("  Run a full reseed to restore complete data.")
+
+    feat_df = build_features(etf_prices, macro, etf_list=etf_list)
+    n_features = feat_df.shape[1]
+    print(f"  Feature matrix: {len(feat_df)} days × {n_features} features")
+    print(f"  Macro data shape: {macro.shape if macro is not None else 'None'}")
+    print(f"  Expected features for {len(etf_list)} ETFs: {len(etf_list)*20 + 12}")
 
     # ── Load agent ────────────────────────────────────────────────────────────
-    state_size = feat_df.shape[1] * lookback + n_actions
-    agent      = DQNAgent(state_size=state_size, n_actions=n_actions)
-    agent.load(weights_path)
+    state_size = n_features * lookback + n_actions
+    print(f"  Computed state size: {state_size}")
+
+    agent = DQNAgent(state_size=state_size, n_actions=n_actions)
+    try:
+        agent.load(weights_path)
+    except RuntimeError as e:
+        print(f"  ERROR loading model: {e}")
+        print("  This is likely because the feature count has changed since training.")
+        print("  Please ensure the dataset contains all required data and reseed if necessary.")
+        return {}
 
     # ── Build current state (last lookback rows) ──────────────────────────────
     window = feat_df.iloc[-lookback:].values.astype(np.float32)
     if len(window) < lookback:
-        pad    = np.zeros((lookback - len(window), feat_df.shape[1]), dtype=np.float32)
+        pad    = np.zeros((lookback - len(window), n_features), dtype=np.float32)
         window = np.vstack([pad, window])
-    # FIX: append one-hot position — assume CASH at inference start (index 0)
+    # append one-hot position — assume CASH at inference start (index 0)
     position = np.zeros(n_actions, dtype=np.float32)
     position[0] = 1.0   # CASH
     state = np.concatenate([window.flatten(), position])
@@ -280,4 +286,4 @@ if __name__ == "__main__":
     parser.add_argument("--tsl", type=float, default=config.DEFAULT_TSL_PCT)
     parser.add_argument("--z",   type=float, default=config.DEFAULT_Z_REENTRY)
     args = parser.parse_args()
-    run_predict(args.option, tsl_pct=args.tsl, z_reentry=args.z)
+    run_predict(option=args.option, tsl_pct=args.tsl, z_reentry=args.z)

@@ -1,0 +1,63 @@
+name: Seed Dataset (Full History)
+
+on:
+  workflow_dispatch:  # manual trigger only
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full dataset seed
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python data_download.py --mode seed
+
+      - name: Upload data to Hugging Face Dataset
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ secrets.HF_DATASET_REPO }}
+        run: |
+          python - <<'EOF'
+          import os, glob
+          from huggingface_hub import HfApi, CommitOperationAdd
+
+          HF_TOKEN        = os.getenv("HF_TOKEN", "")
+          HF_DATASET_REPO = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+
+          api  = HfApi(token=HF_TOKEN)
+          ops  = []
+
+          for f in glob.glob("data/*.parquet"):
+              ops.append(CommitOperationAdd(
+                  path_in_repo=f"data/{os.path.basename(f)}",
+                  path_or_fileobj=f))
+
+          if ops:
+              api.create_commit(
+                  repo_id=HF_DATASET_REPO,
+                  repo_type="dataset",
+                  operations=ops,
+                  commit_message=f"[auto] Seed full dataset",
+              )
+              print(f"Pushed {len(ops)} parquet file(s) to HF Dataset")
+          else:
+              print("No files found to upload.")
+          EOF
+
+      - name: Done
+        run: echo "✅ Seeding complete"

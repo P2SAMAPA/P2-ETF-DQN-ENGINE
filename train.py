@@ -1,8 +1,8 @@
 # train.py
 # Trains the Dueling DQN agent across train/val sets.
 # Usage:
-#   python train.py --start_year 2015 --episodes 300
-#   python train.py --start_year 2008 --episodes 500 --fee_bps 10
+#   python train.py --option a --start_year 2015 --episodes 300
+#   python train.py --option b --start_year 2015 --episodes 300
 
 import argparse
 import json
@@ -17,9 +17,27 @@ from features import build_features
 from env import make_splits
 from agent import DQNAgent
 
-os.makedirs(config.MODELS_DIR, exist_ok=True)
-WEIGHTS_PATH = os.path.join(config.MODELS_DIR, "dqn_best.pt")
-SUMMARY_PATH = os.path.join(config.MODELS_DIR, "training_summary.json")
+
+# ── Helper to get action list for a given option ─────────────────────────────
+
+def get_action_names(option: str) -> list:
+    """Return action names for the given option."""
+    if option == 'a':
+        etfs = config.ETFS
+    elif option == 'b':
+        etfs = config.OPTION_B_ETFS
+    else:
+        raise ValueError(f"Unknown option: {option}")
+    return ["CASH"] + etfs
+
+
+def get_model_dir(option: str) -> str:
+    """Return the subdirectory for the given option."""
+    base = config.MODELS_DIR
+    if option == 'a':
+        return base
+    else:
+        return os.path.join(base, f"option_{option}")
 
 
 # ── Sharpe helper ─────────────────────────────────────────────────────────────
@@ -67,17 +85,29 @@ def run_episode(env, agent: DQNAgent, train: bool = True) -> dict:
 
 # ── Main training loop ────────────────────────────────────────────────────────
 
-def run_training(start_year: int,
+def run_training(option: str,
+                 start_year: int,
                  n_episodes: int,
                  fee_bps:    int,
                  lookback:   int = config.LOOKBACK_WINDOW) -> dict:
 
+    # Set up option-specific paths
+    model_dir = get_model_dir(option)
+    os.makedirs(model_dir, exist_ok=True)
+    weights_path = os.path.join(model_dir, "dqn_best.pt")
+    summary_path = os.path.join(model_dir, "training_summary.json")
+
+    action_names = get_action_names(option)
+    etf_list = action_names[1:]   # exclude CASH
+    n_actions = len(action_names)
+
     print(f"\n{'='*60}")
     print(f"  P2-ETF-DQN-ENGINE — Training")
-    print(f"  Start year : {start_year}")
-    print(f"  Episodes   : {n_episodes}")
-    print(f"  Fee        : {fee_bps} bps")
-    print(f"  Started    : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Option      : {option.upper()} ({len(etf_list)} ETFs)")
+    print(f"  Start year  : {start_year}")
+    print(f"  Episodes    : {n_episodes}")
+    print(f"  Fee         : {fee_bps} bps")
+    print(f"  Started     : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
 
     # ── Load data ─────────────────────────────────────────────────────────────
@@ -89,15 +119,17 @@ def run_training(start_year: int,
     etf_prices = data["etf_prices"]
     macro      = data["macro"]
 
-    # ── Build features ────────────────────────────────────────────────────────
+    # ── Build features (using the correct ETF list) ───────────────────────────
     print("\nBuilding features...")
-    feat_df = build_features(etf_prices, macro, start_year=start_year)
+    feat_df = build_features(etf_prices, macro, start_year=start_year, etf_list=etf_list)
     print(f"  Feature matrix: {feat_df.shape[0]} days × {feat_df.shape[1]} features")
 
-    # ── Make environments ─────────────────────────────────────────────────────
+    # ── Make environments (pass the action list) ──────────────────────────────
     fee_pct = fee_bps / 10_000
     train_env, val_env, test_env = make_splits(
-        feat_df, etf_prices, macro, start_year, fee_pct=fee_pct, lookback=lookback
+        feat_df, etf_prices, macro, start_year,
+        fee_pct=fee_pct, lookback=lookback,
+        action_names=action_names
     )
     print(f"  Train: {train_env.end_idx - train_env.start_idx} steps | "
           f"Val: {val_env.end_idx - val_env.start_idx} steps | "
@@ -106,9 +138,9 @@ def run_training(start_year: int,
     # ── Initialise agent ──────────────────────────────────────────────────────
     state_size  = train_env.observation_size
     total_steps = (train_env.end_idx - train_env.start_idx) * n_episodes
-    agent       = DQNAgent(state_size=state_size, total_steps=total_steps)
+    agent       = DQNAgent(state_size=state_size, n_actions=n_actions, total_steps=total_steps)
     print(f"  State size : {state_size}")
-    print(f"  Actions    : {config.ACTIONS}")
+    print(f"  Actions    : {action_names}")
 
     # ── Training loop ─────────────────────────────────────────────────────────
     best_val_sharpe = -np.inf
@@ -132,7 +164,7 @@ def run_training(start_year: int,
         # ── Save best model (by val Sharpe) ───────────────────────────────────
         if val_stats["sharpe"] > best_val_sharpe:
             best_val_sharpe = val_stats["sharpe"]
-            agent.save(WEIGHTS_PATH)
+            agent.save(weights_path)
             improved = " ✓ saved"
         else:
             improved = ""
@@ -149,19 +181,21 @@ def run_training(start_year: int,
 
     # ── Final test evaluation ─────────────────────────────────────────────────
     print("\nRunning test evaluation with best weights...")
-    agent.load(WEIGHTS_PATH)
+    agent.load(weights_path)
     test_stats = run_episode(test_env, agent, train=False)
     print(f"  Test Sharpe : {test_stats['sharpe']:+.3f}")
     print(f"  Test Equity : {test_stats['equity']:.4f}")
 
     # ── Save training summary ─────────────────────────────────────────────────
     summary = dict(
+        option           = option,
         start_year       = start_year,
         n_episodes       = n_episodes,
         fee_bps          = fee_bps,
         lookback         = lookback,
         state_size       = state_size,
         n_features       = feat_df.shape[1],
+        n_etfs           = len(etf_list),
         trained_at       = datetime.now().isoformat(),
         best_val_sharpe  = round(best_val_sharpe, 4),
         test_sharpe      = round(test_stats["sharpe"], 4),
@@ -172,11 +206,11 @@ def run_training(start_year: int,
         history          = history[-20:],    # last 20 episodes for UI display
     )
 
-    with open(SUMMARY_PATH, "w") as f:
+    with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
 
-    print(f"\n  Training summary saved → {SUMMARY_PATH}")
-    print(f"  Best weights saved    → {WEIGHTS_PATH}")
+    print(f"\n  Training summary saved → {summary_path}")
+    print(f"  Best weights saved    → {weights_path}")
     print(f"\n{'='*60}")
     print("  Training complete.")
     print(f"{'='*60}")
@@ -188,6 +222,8 @@ def run_training(start_year: int,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--option", choices=["a", "b"], default="a",
+                        help="Option to train: a (FI/Commodities) or b (Equity)")
     parser.add_argument("--start_year", type=int, default=config.DEFAULT_START_YEAR,
                         help="Training data start year (e.g. 2015)")
     parser.add_argument("--episodes",   type=int, default=config.DEFAULT_EPISODES,
@@ -199,6 +235,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_training(
+        option     = args.option,
         start_year = args.start_year,
         n_episodes = args.episodes,
         fee_bps    = args.fee_bps,

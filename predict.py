@@ -1,7 +1,8 @@
 # predict.py
 # Generates next-trading-day ETF signal from saved DQN weights.
 # Usage:
-#   python predict.py --tsl 10 --z 1.1
+#   python predict.py --option a --tsl 10 --z 1.1
+#   python predict.py --option b --tsl 10 --z 1.1
 
 import argparse
 import json
@@ -17,9 +18,30 @@ from data_download import load_local
 from features import build_features
 from agent import DQNAgent
 
-WEIGHTS_PATH = os.path.join(config.MODELS_DIR, "dqn_best.pt")
-SUMMARY_PATH = os.path.join(config.MODELS_DIR, "training_summary.json")
-PRED_PATH    = "latest_prediction.json"
+
+def get_action_names(option: str) -> list:
+    """Return action names for the given option."""
+    if option == 'a':
+        etfs = config.ETFS
+    elif option == 'b':
+        etfs = config.OPTION_B_ETFS
+    else:
+        raise ValueError(f"Unknown option: {option}")
+    return ["CASH"] + etfs
+
+
+def get_model_dir(option: str) -> str:
+    """Return the subdirectory for the given option."""
+    base = config.MODELS_DIR
+    if option == 'a':
+        return base
+    else:
+        return os.path.join(base, f"option_{option}")
+
+
+def get_summary_path(option: str) -> str:
+    return os.path.join(get_model_dir(option), "training_summary.json")
+
 
 def next_trading_day(from_date=None) -> date:
     """Returns next NYSE trading day using pandas_market_calendars — no hardcoded holidays."""
@@ -50,13 +72,14 @@ def _q_zscore(q_vals: np.ndarray) -> np.ndarray:
     return (q_vals - mu) / std
 
 
-def download_from_hf():
+def download_from_hf(option: str):
     """Pull weights + data from HF Dataset if not present locally."""
     try:
         from huggingface_hub import hf_hub_download
         token = config.HF_TOKEN or None
         os.makedirs(config.DATA_DIR,   exist_ok=True)
-        os.makedirs(config.MODELS_DIR, exist_ok=True)
+        model_dir = get_model_dir(option)
+        os.makedirs(model_dir, exist_ok=True)
 
         for f in ["etf_prices", "macro"]:
             try:
@@ -67,40 +90,65 @@ def download_from_hf():
             except Exception as e:
                 print(f"  data/{f}: {e}")
 
-        for f in ["dqn_best.pt", "training_summary.json"]:
-            try:
-                dl = hf_hub_download(repo_id=config.HF_DATASET_REPO,
-                                     filename=f"models/{f}",
-                                     repo_type="dataset", token=token)
-                shutil.copy(dl, os.path.join(config.MODELS_DIR, f))
-                print(f"  ✓ models/{f}")
-            except Exception as e:
-                print(f"  models/{f}: {e}")
+        # For Option A, weights are in models/; for Option B, in models/option_b/
+        if option == 'a':
+            remote_model_path = "models/dqn_best.pt"
+            remote_summary_path = "models/training_summary.json"
+        else:
+            remote_model_path = "models/option_b/dqn_best.pt"
+            remote_summary_path = "models/option_b/training_summary.json"
+
+        try:
+            dl = hf_hub_download(repo_id=config.HF_DATASET_REPO,
+                                 filename=remote_model_path,
+                                 repo_type="dataset", token=token)
+            shutil.copy(dl, os.path.join(model_dir, "dqn_best.pt"))
+            print(f"  ✓ {remote_model_path}")
+        except Exception as e:
+            print(f"  {remote_model_path}: {e}")
+
+        try:
+            dl = hf_hub_download(repo_id=config.HF_DATASET_REPO,
+                                 filename=remote_summary_path,
+                                 repo_type="dataset", token=token)
+            shutil.copy(dl, os.path.join(model_dir, "training_summary.json"))
+            print(f"  ✓ {remote_summary_path}")
+        except Exception as e:
+            print(f"  {remote_summary_path}: {e}")
     except Exception as e:
         print(f"  HF download failed: {e}")
 
 
-def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
+def run_predict(option: str,
+                tsl_pct:   float = config.DEFAULT_TSL_PCT,
                 z_reentry: float = config.DEFAULT_Z_REENTRY) -> dict:
 
     print(f"\n{'='*60}")
     print(f"  Predict — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Option: {option.upper()}")
     print(f"{'='*60}")
+
+    action_names = get_action_names(option)
+    etf_list = action_names[1:]
+    n_actions = len(action_names)
+    model_dir = get_model_dir(option)
+    weights_path = os.path.join(model_dir, "dqn_best.pt")
+    summary_path = get_summary_path(option)
 
     # ── Ensure data + weights ─────────────────────────────────────────────────
     data = load_local()
     if not data:
         print("  No local data — downloading from HF...")
-        download_from_hf()
+        download_from_hf(option)
         data = load_local()
     if not data:
         print("  ERROR: No data available.")
         return {}
 
-    if not os.path.exists(WEIGHTS_PATH):
+    if not os.path.exists(weights_path):
         print("  No local weights — downloading from HF...")
-        download_from_hf()
-    if not os.path.exists(WEIGHTS_PATH):
+        download_from_hf(option)
+    if not os.path.exists(weights_path):
         print("  ERROR: No weights available.")
         return {}
 
@@ -108,23 +156,22 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
     trained_from_year = None
     trained_at        = None
     lookback          = config.LOOKBACK_WINDOW
-    if os.path.exists(SUMMARY_PATH):
-        with open(SUMMARY_PATH) as f:
+    if os.path.exists(summary_path):
+        with open(summary_path) as f:
             summary = json.load(f)
         trained_from_year = summary.get("start_year")
         trained_at        = summary.get("trained_at")
         lookback          = summary.get("lookback", config.LOOKBACK_WINDOW)
 
-    # ── Build features ────────────────────────────────────────────────────────
+    # ── Build features using correct ETF list ─────────────────────────────────
     etf_prices = data["etf_prices"]
     macro      = data["macro"]
-    feat_df    = build_features(etf_prices, macro)
+    feat_df    = build_features(etf_prices, macro, etf_list=etf_list)
 
     # ── Load agent ────────────────────────────────────────────────────────────
-    # FIX: state_size must match env.py — flattened window + one-hot position (n_actions)
-    state_size = feat_df.shape[1] * lookback + config.N_ACTIONS
-    agent      = DQNAgent(state_size=state_size)
-    agent.load(WEIGHTS_PATH)
+    state_size = feat_df.shape[1] * lookback + n_actions
+    agent      = DQNAgent(state_size=state_size, n_actions=n_actions)
+    agent.load(weights_path)
 
     # ── Build current state (last lookback rows) ──────────────────────────────
     window = feat_df.iloc[-lookback:].values.astype(np.float32)
@@ -132,7 +179,7 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
         pad    = np.zeros((lookback - len(window), feat_df.shape[1]), dtype=np.float32)
         window = np.vstack([pad, window])
     # FIX: append one-hot position — assume CASH at inference start (index 0)
-    position = np.zeros(config.N_ACTIONS, dtype=np.float32)
+    position = np.zeros(n_actions, dtype=np.float32)
     position[0] = 1.0   # CASH
     state = np.concatenate([window.flatten(), position])
 
@@ -154,7 +201,7 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
     in_cash       = False
     two_day_ret   = 0.0
     if best_idx != 0:
-        etf = config.ACTIONS[best_idx]
+        etf = action_names[best_idx]
         if etf in etf_prices.columns:
             last2       = etf_prices[etf].iloc[-3:]
             two_day_ret = float((last2.iloc[-1] / last2.iloc[0]) - 1) * 100
@@ -163,7 +210,7 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
                 if best_z < z_reentry:
                     in_cash = True
 
-    final_signal = "CASH" if in_cash else config.ACTIONS[best_idx]
+    final_signal = "CASH" if in_cash else action_names[best_idx]
 
     # Signal date — use NYSE calendar
     now_est  = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
@@ -187,16 +234,17 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
     q_shifted = q_values - q_values.max()
     exp_q     = np.exp(q_shifted / 0.1)
     probs     = exp_q / exp_q.sum()
-    prob_dict = {config.ACTIONS[i]: round(float(probs[i]), 4)
-                 for i in range(config.N_ACTIONS)}
+    prob_dict = {action_names[i]: round(float(probs[i]), 4)
+                 for i in range(n_actions)}
 
     output = dict(
+        option            = option,
         as_of_date        = str(signal_date),
         final_signal      = final_signal,
         final_confidence  = round(float(probs[best_idx]), 4),
         z_score           = round(best_z, 3),
-        q_values          = {config.ACTIONS[i]: round(float(q_values[i]), 4)
-                             for i in range(config.N_ACTIONS)},
+        q_values          = {action_names[i]: round(float(q_values[i]), 4)
+                             for i in range(n_actions)},
         probabilities     = prob_dict,
         tbill_rate        = round(tbill_rate, 3),
         tsl_status        = dict(
@@ -210,7 +258,8 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
         trained_at        = trained_at,
     )
 
-    with open(PRED_PATH, "w") as f:
+    pred_path = f"latest_prediction_{option}.json"
+    with open(pred_path, "w") as f:
         json.dump(output, f, indent=2, default=str)
 
     print(f"\n  Signal date  : {signal_date}")
@@ -218,15 +267,17 @@ def run_predict(tsl_pct:   float = config.DEFAULT_TSL_PCT,
     print(f"  Z-score      : {best_z:.2f}σ")
     print(f"  Confidence   : {float(probs[best_idx]):.1%}")
     for act, p in prob_dict.items():
-        print(f"    {act:<8} Q={q_values[config.ACTIONS.index(act)]:.3f}  p={p:.3f}")
-    print(f"\n  Saved → {PRED_PATH}")
+        print(f"    {act:<8} Q={q_values[action_names.index(act)]:.3f}  p={p:.3f}")
+    print(f"\n  Saved → {pred_path}")
 
     return output
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--option", choices=["a", "b"], default="a",
+                        help="Option to predict: a (FI/Commodities) or b (Equity)")
     parser.add_argument("--tsl", type=float, default=config.DEFAULT_TSL_PCT)
     parser.add_argument("--z",   type=float, default=config.DEFAULT_Z_REENTRY)
     args = parser.parse_args()
-    run_predict(tsl_pct=args.tsl, z_reentry=args.z)
+    run_predict(args.option, tsl_pct=args.tsl, z_reentry=args.z)

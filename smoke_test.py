@@ -68,7 +68,9 @@ def make_synthetic_env():
         index=dates, columns=etfs)
     macro_df = pd.DataFrame(
         {"macro_TBILL_3M": np.full(n, 5.0)}, index=dates)
-    env = ETFTradingEnv(feat_df, price_df, macro_df, lookback=config.LOOKBACK_WINDOW)
+    env = ETFTradingEnv(feat_df, price_df, macro_df,
+                        lookback=config.LOOKBACK_WINDOW,
+                        action_names=config.ACTIONS)   # pass action_names
     return env, n_feat
 
 env, n_feat = None, None
@@ -110,7 +112,7 @@ check("state shape matches observation_size", check_state_shape)
 
 def check_position_onehot():
     env.reset()
-    env.held_action = 3  # pretend we're in HYG
+    env.held_action = 3  # pretend we're in HYG (index 3)
     state = env._get_state()
     pos = state[-config.N_ACTIONS:]
     if pos[3] != 1.0:
@@ -155,7 +157,7 @@ print("\n── Agent ──")
 
 def check_agent_init():
     obs_size = env.observation_size
-    agent = DQNAgent(state_size=obs_size, total_steps=10_000)
+    agent = DQNAgent(state_size=obs_size, n_actions=env.n_actions, total_steps=10_000)
     return f"state_size={obs_size}"
 
 check("DQNAgent initialises", check_agent_init)
@@ -163,29 +165,29 @@ check("DQNAgent initialises", check_agent_init)
 def check_action_diversity():
     """Agent should not always return same action (even random)."""
     obs_size = env.observation_size
-    agent = DQNAgent(state_size=obs_size, total_steps=10_000)
+    agent = DQNAgent(state_size=obs_size, n_actions=env.n_actions, total_steps=10_000)
     state = env.reset()
     actions = set()
     for _ in range(50):
         a = agent.select_action(state, greedy=False)  # epsilon=1.0 → random
         actions.add(a)
-    if len(actions) < config.N_ACTIONS - 1:
+    if len(actions) < env.n_actions - 1:
         raise ValueError(f"Only {len(actions)} unique actions in 50 random steps")
-    return f"{len(actions)}/{config.N_ACTIONS} unique actions"
+    return f"{len(actions)}/{env.n_actions} unique actions"
 
 check("agent explores all actions", check_action_diversity)
 
 def check_save_load_roundtrip():
     import tempfile
     obs_size = env.observation_size
-    agent = DQNAgent(state_size=obs_size, total_steps=1000)
+    agent = DQNAgent(state_size=obs_size, n_actions=env.n_actions, total_steps=1000)
     state = env.reset()
     q_before = agent.q_values(state).copy()
     with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
         path = f.name
     agent.save(path)
     # Load into fresh agent
-    agent2 = DQNAgent(state_size=obs_size, total_steps=1000)
+    agent2 = DQNAgent(state_size=obs_size, n_actions=env.n_actions, total_steps=1000)
     agent2.load(path)
     q_after = agent2.q_values(state)
     os.unlink(path)
@@ -197,7 +199,7 @@ check("agent save/load roundtrip", check_save_load_roundtrip)
 
 def check_soft_update():
     obs_size = env.observation_size
-    agent = DQNAgent(state_size=obs_size, total_steps=1000)
+    agent = DQNAgent(state_size=obs_size, n_actions=env.n_actions, total_steps=1000)
     # Manually diverge online and target
     for p in agent.online_net.parameters():
         p.data.fill_(1.0)
@@ -215,7 +217,7 @@ check("Polyak soft update correct", check_soft_update)
 
 def check_learning_step():
     obs_size = env.observation_size
-    agent = DQNAgent(state_size=obs_size, total_steps=10_000)
+    agent = DQNAgent(state_size=obs_size, n_actions=env.n_actions, total_steps=10_000)
     state = env.reset()
     # Fill replay buffer past MIN_REPLAY_SIZE
     for _ in range(config.MIN_REPLAY_SIZE + config.BATCH_SIZE + 10):
@@ -238,7 +240,7 @@ def check_predict_state_size():
     n_feat   = env.feat_df.shape[1]
     lookback = config.LOOKBACK_WINDOW
     # predict.py formula (fixed version)
-    predict_state_size = n_feat * lookback + config.N_ACTIONS
+    predict_state_size = n_feat * lookback + env.n_actions
     env_state_size     = env.observation_size
     if predict_state_size != env_state_size:
         raise ValueError(

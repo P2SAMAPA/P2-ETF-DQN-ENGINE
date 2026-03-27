@@ -150,7 +150,6 @@ def _load_sweep_cache_any(option: str) -> tuple:
         api     = HfApi()
         prefix = "sweep/option_" if option != 'a' else "sweep/"
         files   = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
-        # Find most recent date across all sweep files for this option
         for fname in files:
             if not fname.startswith(prefix):
                 continue
@@ -541,77 +540,20 @@ with tab1:
 
     st.markdown("---")
 
-    # ── Methodology Section (unchanged) ───────────────────────────────────────────
+    # ── Methodology Section (shortened) ───────────────────────────────────────────
     st.subheader("🧠 Methodology")
     st.markdown("""
-    <div class="method-box">
+    **Dueling DQN** for ETF rotation, extending **Yasin & Gill (2024)**.
 
-    <h4 style="color:#0066cc;">Reinforcement Learning Framework — Dueling DQN</h4>
+    - **Multi-asset action space** – CASH + 7 ETFs (Option A) or 12 ETFs (Option B)  
+    - **Macro state augmentation** – VIX, yield curve slope, T-bill rate, USD index, credit spreads  
+    - **Reward** = excess daily return over T-bill, minus transaction cost, scaled by inverse realised volatility  
+    - **Training** – 80/10/10 train/val/test split; best model selected by validation Sharpe; Double DQN; experience replay; ε‑greedy decay  
+    - **Risk controls** – trailing stop loss (overrides to CASH) + Z‑score re‑entry threshold  
 
-    <p>This engine implements a <b>Dueling Deep Q-Network (Dueling DQN)</b> for daily ETF
-    selection, directly extending the RL framework proposed by
-    <b>Yasin & Gill (2024)</b> — <i>"Reinforcement Learning Framework for Quantitative Trading"</i>,
-    presented at the <b>ICAIF 2024 FM4TS Workshop</b>
-    (<a href="https://arxiv.org/abs/2411.07585" style="color:#0066cc;">arXiv:2411.07585</a>).</p>
-
-    <h5 style="color:#0066cc;">From the Paper → Our Implementation</h5>
-
-    <p>The paper benchmarks DQN, PPO, and A2C agents on single-stock buy/sell decisions using
-    20 technical indicators, finding that <b>DQN with MLP policy significantly outperforms
-    policy-gradient methods</b> (PPO, A2C) on daily financial time-series, and that
-    <b>higher learning rates</b> (lr = 0.001) produce the most profitable signals.</p>
-
-    <p>We extend this methodology in three key ways:</p>
-
-    <ol>
-    <li><b>Multi-Asset Action Space:</b> Rather than binary buy/sell on a single asset,
-    the agent selects from 8 discrete actions — CASH or one of 7 ETFs
-    (TLT, VCIT, LQD, HYG, VNQ, GLD, SLV). This is fundamentally a harder problem than
-    the paper's setup, requiring the agent to learn relative value across assets.</li>
-
-    <li><b>Dueling Architecture</b> (Wang et al., 2016): We replace the paper's standard DQN
-    with a <b>Dueling DQN</b>, which separates the Q-function into a state-value stream V(s)
-    and an advantage stream A(s,a):
-    <br><code>Q(s,a) = V(s) + A(s,a) − mean_a(A(s,a))</code><br>
-    This is specifically more effective for multi-action spaces because it explicitly learns
-    which state is valuable independent of which action to take — critical when TLT and VCIT
-    have similar Q-values in a rate-falling regime.</li>
-
-    <li><b>Macro State Augmentation:</b> The paper's state space uses only price-derived
-    technical indicators. We add six FRED macro signals to the state:
-    VIX, T10Y2Y (yield curve slope), TBILL_3M, DXY, Corp Spread, and HY Spread.
-    These directly encode the macro regime that drives fixed-income and credit ETF selection.</li>
-    </ol>
-
-    <h5 style="color:#0066cc;">State Space (per trading day)</h5>
-    <p>20 technical indicators per ETF × 7 ETFs + 6 macro signals (+ z-scored variants),
-    all computed over a rolling <b>20-day lookback window</b>. The flattened window is fed
-    to the DQN as a single state vector. Indicators follow the paper exactly:
-    RSI(14), MACD(12/26/9), Stochastic(14), CCI(20), ROC(10), CMO(14), Williams%R,
-    ATR, Bollinger %B + Width, StochRSI, Ultimate Oscillator, Momentum(10),
-    rolling returns at 1/5/10/21d, and 21d realised volatility.</p>
-
-    <h5 style="color:#0066cc;">Reward Function</h5>
-    <p>Reward = excess daily return over 3m T-bill, minus transaction cost on switches,
-    scaled by inverse 21d realised volatility to penalise drawdown-prone positions.
-    This replaces the paper's raw P&L reward with a risk-adjusted signal aligned with
-    Sharpe Ratio maximisation.</p>
-
-    <h5 style="color:#0066cc;">Training</h5>
-    <p>Data split is 80/10/10 (train/val/test) from the user-selected start year to present.
-    Best weights are saved by <b>validation-set Sharpe Ratio</b>. The agent uses
-    <b>Double DQN</b> (online network selects action, frozen target network evaluates)
-    to reduce Q-value overestimation — a known instability in financial RL applications.
-    Experience replay buffer of 100k transitions; hard target network update every 500 steps;
-    ε-greedy exploration decaying from 1.0 → 0.05 over the first 50% of training.</p>
-
-    <h5 style="color:#0066cc;">Risk Controls</h5>
-    <p>A post-signal <b>Trailing Stop Loss</b> overrides the DQN signal to CASH if the
-    2-day cumulative return of the held ETF breaches the configured threshold.
-    Re-entry from CASH requires the DQN's best-action Z-score to clear the re-entry
-    threshold, ensuring the model has recovered conviction before re-entering risk.</p>
-
-    </div>
+    📄 **References**  
+    - Yasin, A.S. & Gill, P.S. (2024). *Reinforcement Learning Framework for Quantitative Trading*. [arXiv:2411.07585](https://arxiv.org/abs/2411.07585)  
+    - Wang, Z. et al. (2016). *Dueling Network Architectures for Deep Reinforcement Learning*. ICML 2016.
     """, unsafe_allow_html=True)
 
     # ── Reference ─────────────────────────────────────────────────────────────────

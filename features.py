@@ -3,6 +3,8 @@
 # Implements the 20 technical indicators from:
 #   Yasin & Gill (2024) "Reinforcement Learning Framework for Quantitative Trading"
 #   arXiv:2411.07585  — ICAIF 2024 FM4TS Workshop
+#
+# Now accepts an optional etf_list parameter to support both Option A and Option B.
 
 import numpy as np
 import pandas as pd
@@ -10,7 +12,7 @@ import pandas as pd
 import config
 
 
-# ── Individual indicator functions (unchanged) ─────────────────────────────────
+# ── Individual indicator functions (unchanged) ───────────────────────────────
 
 def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
@@ -110,7 +112,7 @@ def _rolling_zscore(series: pd.Series, window: int = 60) -> pd.Series:
     return (series - mu) / (std + 1e-9)
 
 
-# ── Per-ETF feature builder (unchanged) ───────────────────────────────────────
+# ── Per-ETF feature builder ───────────────────────────────────────────────────
 
 def _etf_features(prices: pd.DataFrame, ticker: str) -> pd.DataFrame:
     """
@@ -163,7 +165,7 @@ def _etf_features(prices: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return feat
 
 
-# ── Macro feature builder (unchanged) ─────────────────────────────────────────
+# ── Macro feature builder ─────────────────────────────────────────────────────
 
 def _macro_features(macro: pd.DataFrame) -> pd.DataFrame:
     feat = pd.DataFrame(index=macro.index)
@@ -174,7 +176,7 @@ def _macro_features(macro: pd.DataFrame) -> pd.DataFrame:
     return feat
 
 
-# ── Master feature matrix (modified to accept etf_list) ───────────────────────
+# ── Master feature matrix ─────────────────────────────────────────────────────
 
 def build_features(etf_prices: pd.DataFrame,
                    macro: pd.DataFrame,
@@ -182,8 +184,8 @@ def build_features(etf_prices: pd.DataFrame,
                    etf_list: list = None) -> pd.DataFrame:
     """
     Builds the full feature matrix aligned on trading days.
-    etf_list: list of ETFs to include (if None, uses config.ETFS)
-    Returns a DataFrame where each row is one day's state vector.
+    If etf_list is provided, compute features only for those ETFs.
+    Otherwise, use config.ETFS (Option A).
     """
     if etf_list is None:
         etf_list = config.ETFS
@@ -205,11 +207,16 @@ def build_features(etf_prices: pd.DataFrame,
     feat = feat.ffill(limit=5)
 
     # Align to ETF trading days only (drop weekends / holidays)
-    # Use the first ETF in etf_list to get index
+    # Use the first ETF in the list to get the index
     first_etf = etf_list[0]
-    if first_etf in etf_prices.columns:
-        etf_idx = etf_prices[first_etf].dropna().index
-        feat = feat.reindex(etf_idx).ffill(limit=5)
+    if first_etf not in etf_prices.columns:
+        # fallback: use the first available ETF
+        available = [t for t in etf_list if t in etf_prices.columns]
+        if not available:
+            raise ValueError(f"No ETFs from {etf_list} found in price data.")
+        first_etf = available[0]
+    etf_idx = etf_prices[first_etf].dropna().index
+    feat    = feat.reindex(etf_idx).ffill(limit=5)
 
     # Filter by start year if provided
     if start_year:
@@ -217,15 +224,16 @@ def build_features(etf_prices: pd.DataFrame,
 
     # Drop rows where >50% of features are NaN (warm-up rows)
     thresh = int(len(feat.columns) * 0.5)
-    feat = feat.dropna(thresh=thresh)
+    feat   = feat.dropna(thresh=thresh)
 
     # Fill remaining NaNs with 0 (edge-of-history cases)
-    feat = feat.fillna(0.0)
+    feat   = feat.fillna(0.0)
 
     return feat
 
 
-def get_feature_names(etf_prices: pd.DataFrame, macro: pd.DataFrame,
+def get_feature_names(etf_prices: pd.DataFrame,
+                      macro: pd.DataFrame,
                       etf_list: list = None) -> list:
     """Returns the list of feature column names (for debugging / UI display)."""
     feat = build_features(etf_prices, macro, etf_list=etf_list)

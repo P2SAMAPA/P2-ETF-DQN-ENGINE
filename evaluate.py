@@ -211,29 +211,27 @@ def run_backtest(option: str,
     with open(eval_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    # ── Write date-stamped sweep cache if this is a sweep year ────────────────
-    sweep_years = [2008, 2013, 2015, 2017, 2019, 2021]
-    if start_year in sweep_years:
-        today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-        sweep_payload = {
-            "signal":     final_signal,
-            "top_held":   final_signal,
-            "ann_return": round(ann_ret, 6),
-            "z_score":    round(best_z,  4),
-            "sharpe":     round(sharpe,  4),
-            "max_dd":     round(max_dd,  6),
-            "conviction": conviction,
-            "lookback":   results.get("lookback", config.LOOKBACK_WINDOW),
-            "start_year": start_year,
-            "sweep_date": today_str,
-        }
-        sweep_dir = os.path.join("results", f"option_{option}")
-        os.makedirs(sweep_dir, exist_ok=True)
-        sweep_fname = os.path.join(sweep_dir, f"sweep_{start_year}_{today_str}.json")
-        with open(sweep_fname, "w") as sf:
-            json.dump(sweep_payload, sf, indent=2)
-        print(f"  Sweep cache saved → {sweep_fname}")
-        print(f"  Sweep signal: {final_signal}  z={best_z:.3f}  conviction={conviction}")
+    # ── Write date-stamped sweep cache for EVERY start year ───────────────────
+    today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    sweep_payload = {
+        "signal":     final_signal,
+        "top_held":   final_signal,
+        "ann_return": round(ann_ret, 6),
+        "z_score":    round(best_z,  4),
+        "sharpe":     round(sharpe,  4),
+        "max_dd":     round(max_dd,  6),
+        "conviction": conviction,
+        "lookback":   results.get("lookback", config.LOOKBACK_WINDOW),
+        "start_year": start_year,
+        "sweep_date": today_str,
+    }
+    sweep_dir = os.path.join("results", f"option_{option}")
+    os.makedirs(sweep_dir, exist_ok=True)
+    sweep_fname = os.path.join(sweep_dir, f"sweep_{start_year}_{today_str}.json")
+    with open(sweep_fname, "w") as sf:
+        json.dump(sweep_payload, sf, indent=2)
+    print(f"  Sweep cache saved → {sweep_fname}")
+    print(f"  Sweep signal: {final_signal}  z={best_z:.3f}  conviction={conviction}")
 
     print(f"\n  Ann. Return  : {ann_ret:.2%}")
     print(f"  Sharpe Ratio : {sharpe:.3f}")

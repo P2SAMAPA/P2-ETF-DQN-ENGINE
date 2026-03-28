@@ -8,13 +8,10 @@ from datetime import datetime, date, timedelta, timezone
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import requests as req
 import streamlit as st
 from huggingface_hub import hf_hub_download, HfApi
 
 import config
-
-WORKFLOW_FILE  = "train_models.yml"
 
 # Hardcoded risk parameters (no UI sliders)
 FIXED_FEE_BPS   = 12
@@ -75,52 +72,6 @@ def _next_trading_day() -> date:
     return d
 
 
-def _trigger_github(start_year: int, fee_bps: int,
-                    tsl_pct: float, z_reentry: float,
-                    sweep_mode: str = "") -> bool:
-    try:
-        token = os.getenv("GITHUB_TOKEN", "")
-        if not token:
-            st.error("❌ GITHUB_TOKEN not found in Space secrets.")
-            return False
-        url  = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
-        resp = req.post(url,
-            headers={"Authorization": f"token {token}",
-                     "Accept": "application/vnd.github+json"},
-            json={"ref": "main",
-                  "inputs": {
-                      "start_year": str(start_year),
-                      "fee_bps":    str(fee_bps),
-                      "tsl_pct":    str(tsl_pct),
-                      "z_reentry":  str(z_reentry),
-                      "sweep_mode": sweep_mode,
-                  }},
-            timeout=10,
-        )
-        if resp.status_code != 204:
-            st.error(f"❌ GitHub API returned HTTP {resp.status_code} — {resp.text[:300]}")
-        return resp.status_code == 204
-    except Exception as e:
-        st.error(f"❌ Exception: {str(e)}")
-        return False
-
-
-def _get_latest_workflow_run() -> dict:
-    try:
-        token = os.getenv("GITHUB_TOKEN", "")
-        if not token:
-            return {}
-        url = f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/runs?per_page=1"
-        r = req.get(url, headers={"Authorization": f"token {token}",
-                                   "Accept": "application/vnd.github+json"}, timeout=10)
-        if r.status_code == 200:
-            runs = r.json().get("workflow_runs", [])
-            return runs[0] if runs else {}
-    except Exception:
-        pass
-    return {}
-
-
 def _today_est() -> date:
     return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
 
@@ -136,7 +87,6 @@ def _load_single_year_sweep(option: str, year: int) -> dict:
         matches = [f for f in files if f.startswith(prefix) and f.endswith(".json")]
         if not matches:
             return {}
-        # Pick the most recent by date (the filename ends with YYYYMMDD)
         matches.sort(reverse=True)
         latest = matches[0]
         path = hf_hub_download(repo_id=repo_id, filename=latest,
@@ -261,7 +211,7 @@ def _compute_consensus(sweep_data: dict) -> dict:
             "per_year": df.to_dict("records"), "n_years": len(rows)}
 
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar (simplified) ───────────────────────────────────────────────────────
 
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
@@ -279,46 +229,13 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.markdown("### 📅 Training Parameters")
-    st.caption("Changes here require retraining via GitHub Actions.")
-    start_year = st.slider("Start Year", config.DEFAULT_START_YEAR, 2024, 2015, key=f"start_{opt_code}")
-
-    # Remove the risk sliders; they are now hardcoded.
-    # Instead, display the fixed values.
-    st.divider()
     st.markdown("### 🛡️ Fixed Risk Controls")
     st.caption(f"Transaction Cost: {FIXED_FEE_BPS} bps")
     st.caption(f"Trailing Stop Loss: {FIXED_TSL_PCT}%")
     st.caption(f"Z-Score Re‑entry: {FIXED_Z_REENTRY}")
 
-    st.divider()
-    run_btn = st.button("🚀 Retrain DQN Agent",
-                        help="Triggers GitHub Actions training job",
-                        use_container_width=True)
-
-    if run_btn:
-        triggered = _trigger_github(start_year, FIXED_FEE_BPS, FIXED_TSL_PCT, FIXED_Z_REENTRY, sweep_mode="")
-        if triggered:
-            st.success(
-                f"✅ Training triggered!\n\n"
-                f"Training from **{start_year}** · 200 episodes · "
-                f"**{FIXED_FEE_BPS}bps** fees\n\n"
-                f"Results update here in ~50–65 min."
-            )
-        else:
-            st.warning(
-                "⚠️ Could not trigger GitHub Actions automatically.\n\n"
-                f"**Manual steps:**\n"
-                f"- Go to GitHub → Actions → Train DQN Agent\n"
-                f"- Set `start_year = {start_year}`\n"
-                f"- Or add `GITHUB_TOKEN` to HF Space secrets."
-            )
-
-    st.caption(f"↑ Trains from {start_year} onwards · 200 episodes (hardcoded in train_models.yml)")
-
 
 # ── Load outputs for selected option (last prediction/evaluation) ────────────
-# These are used for the hero banner, not for the single‑year tab.
 pred_file = f"latest_prediction_{opt_code}.json"
 eval_file = f"evaluation_results_{opt_code}.json"
 pred  = _load_json(pred_file)
@@ -342,11 +259,6 @@ two_day_ret      = tsl_stat.get("two_day_cumul_pct", 0.0)
 st.title("🤖 P2 ETF DQN Engine")
 st.caption("Dueling Deep Q-Network · Multi-Asset ETF Selection · arXiv:2411.07585")
 
-# ── Check latest workflow run status ─────────────────────────────────────────
-latest_run  = _get_latest_workflow_run()
-is_training = latest_run.get("status") in ("queued", "in_progress")
-run_started = latest_run.get("created_at", "")[:16].replace("T", " ") if latest_run else ""
-
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab1, tab2 = st.tabs(["📊 Single-Year Results", "🔄 Multi-Year Consensus Sweep"])
 
@@ -356,20 +268,17 @@ tab1, tab2 = st.tabs(["📊 Single-Year Results", "🔄 Multi-Year Consensus Swe
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
     st.subheader(f"Single‑Year Results — {option}")
-    # Let the user select a start year to view
     view_year = st.selectbox(
         "Select start year to view:",
         options=list(range(2008, 2026)),
-        index=len(range(2008, 2026))-1,  # last year (2025)
+        index=len(range(2008, 2026))-1,
         key=f"view_year_{opt_code}"
     )
 
-    # Load the sweep file for that year and option
     year_data = _load_single_year_sweep(opt_code, view_year)
     if not year_data:
         st.info(f"No sweep results found for year {view_year}. Run the consensus sweep first.")
     else:
-        # Extract metrics
         signal = year_data.get("signal", "?")
         ann_return = year_data.get("ann_return", 0.0)
         z_score_yr = year_data.get("z_score", 0.0)
@@ -416,13 +325,8 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-        # Note about missing equity curve / allocation
         st.info("📈 For full backtest details (equity curve, allocations, trade log), please refer to the **Multi‑Year Consensus Sweep** tab, which aggregates all years. The single‑year view shows the summary metrics from the sweep results.")
 
-        # Optionally display a bar chart of Q-values? Not available in sweep file.
-        # We'll skip the extra charts for now.
-
-    # Optionally, display a disclaimer about fixed parameters
     st.markdown("---")
     st.caption(f"Performance shown uses fixed risk parameters: fee {FIXED_FEE_BPS} bps, TSL {FIXED_TSL_PCT}%, Z re‑entry {FIXED_Z_REENTRY}.")
 

@@ -62,9 +62,6 @@ jobs:
           git push || true
 
   # ── Single-year train (manual or daily auto) ─────────────────────────────────
-  # This runs when a specific year is requested (sweep_mode blank or not set)
-  # It will run the train, evaluate, predict for that year and upload results.
-  # The single-year job is kept for backward compatibility but not needed for full sweep.
   train:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
@@ -324,9 +321,6 @@ jobs:
         run: echo "✅ DQN training pipeline complete for both options."
 
   # ── Sweep job template (one per year, all run in parallel) ──────────────────
-  # This runs when sweep_mode is provided (comma-separated years) OR when
-  # sweep_mode is blank (run all years). This ensures a manual dispatch with
-  # empty sweep_mode will generate results for all years.
   sweep:
     if: >
       (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2-6') ||
@@ -375,7 +369,7 @@ jobs:
       - name: Push sweep result to HF Dataset
         run: |
           python3 - <<'EOF'
-          import os, json, glob
+          import os, glob
           from huggingface_hub import HfApi, CommitOperationAdd
           token   = os.environ["HF_TOKEN"]
           repo_id = os.environ.get("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
@@ -383,14 +377,28 @@ jobs:
           year    = "${{ matrix.year }}"
           api     = HfApi()
           ops     = []
-          for f in glob.glob(f"results/option_{option}/sweep_{year}_*.json"):
+          # Look for the sweep file in the correct local directory
+          sweep_dir = f"results/option_{option}"
+          pattern = f"{sweep_dir}/sweep_{year}_*.json"
+          for f in glob.glob(pattern):
               fname = os.path.basename(f)
               with open(f, "rb") as fh:
-                  ops.append(CommitOperationAdd(path_in_repo=f"sweep/option_{option}/{fname}", path_or_fileobj=fh.read()))
+                  # Upload to the correct subdirectory in HF
+                  ops.append(CommitOperationAdd(
+                      path_in_repo=f"sweep/option_{option}/{fname}",
+                      path_or_fileobj=fh.read()
+                  ))
           if ops:
-              api.create_commit(repo_id=repo_id, repo_type="dataset", token=token,
-                                operations=ops, commit_message=f"Sweep results: {option}/{year}")
+              api.create_commit(
+                  repo_id=repo_id,
+                  repo_type="dataset",
+                  token=token,
+                  operations=ops,
+                  commit_message=f"Sweep results: {option}/{year}"
+              )
               print(f"Pushed {len(ops)} sweep file(s) to HF Dataset")
+          else:
+              print(f"No sweep file found for {option}/{year}")
           EOF
       - name: Commit sweep results
         run: |

@@ -121,24 +121,31 @@ def _today_est() -> date:
 
 
 def _load_sweep_cache(for_date: date, option: str) -> dict:
-    """Load date-stamped sweep files from HF Dataset."""
+    """Load date-stamped sweep files from HF Dataset (subdirectory)."""
     cache = {}
     try:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, HfApi
         token   = os.getenv("HF_TOKEN")
         repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
         date_tag = for_date.strftime("%Y%m%d")
-        # We'll try to load for years 2008-2025
-        for yr in range(2008, 2026):
-            fname = f"sweep_{yr}_{date_tag}.json"
-            remote_path = f"sweep/option_{option}/{fname}" if option != 'a' else f"sweep/{fname}"
-            try:
-                path = hf_hub_download(repo_id=repo_id, filename=remote_path,
-                                       repo_type="dataset", token=token, force_download=True)
-                with open(path) as f:
-                    cache[yr] = json.load(f)
-            except Exception:
-                pass
+        # List files in the subdirectory for this option
+        api = HfApi()
+        prefix = f"sweep/option_{option}/sweep_"
+        files = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
+        for f in files:
+            if f.startswith(prefix) and f.endswith(".json"):
+                # Extract year from filename e.g. sweep_2008_20260328.json
+                parts = os.path.basename(f).replace(".json","").split("_")
+                if len(parts) == 3:
+                    try:
+                        yr = int(parts[1])
+                        if parts[2] == date_tag:
+                            path = hf_hub_download(repo_id=repo_id, filename=f,
+                                                   repo_type="dataset", token=token, force_download=True)
+                            with open(path) as fh:
+                                cache[yr] = json.load(fh)
+                    except Exception:
+                        pass
     except Exception as e:
         st.warning(f"Could not load sweep results: {e}")
     return cache
@@ -152,22 +159,21 @@ def _load_sweep_cache_any(option: str) -> tuple:
         token   = os.getenv("HF_TOKEN")
         repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
         api     = HfApi()
-        prefix = "sweep/option_" if option != 'a' else "sweep/"
+        prefix = f"sweep/option_{option}/sweep_"
         files   = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
         # Find most recent date across all sweep files for this option
         for fname in files:
             if not fname.startswith(prefix):
                 continue
             bn = os.path.basename(fname)
-            if bn.startswith("sweep_") and bn.endswith(".json"):
-                parts = bn.replace(".json","").split("_")
-                if len(parts) == 3:
-                    try:
-                        dt = datetime.strptime(parts[2], "%Y%m%d").date()
-                        if best_date is None or dt > best_date:
-                            best_date = dt
-                    except Exception:
-                        pass
+            parts = bn.replace(".json","").split("_")
+            if len(parts) == 3:
+                try:
+                    dt = datetime.strptime(parts[2], "%Y%m%d").date()
+                    if best_date is None or dt > best_date:
+                        best_date = dt
+                except Exception:
+                    pass
         if best_date:
             found = _load_sweep_cache(best_date, option)
     except Exception:
@@ -581,7 +587,7 @@ with tab2:
         f"**Weighted score** = 40% Ann. Return + 20% Z-Score + 20% Sharpe + 20% (–MaxDD), min‑max normalised."
     )
 
-    # Load the most recent sweep results from HF
+    # Load the most recent sweep results from HF (subdirectory)
     sweep_data, sweep_date = _load_sweep_cache_any(opt_code)
     if not sweep_data:
         st.info("No sweep results found. They will be generated after the next daily run.")

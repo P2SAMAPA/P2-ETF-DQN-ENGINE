@@ -10,10 +10,16 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests as req
 import streamlit as st
+from huggingface_hub import hf_hub_download, HfApi
 
 import config
 
 WORKFLOW_FILE  = "train_models.yml"
+
+# Hardcoded risk parameters (no UI sliders)
+FIXED_FEE_BPS   = 12
+FIXED_TSL_PCT   = 12.0
+FIXED_Z_REENTRY = 0.7
 
 # Colour maps for both universes
 FI_COLOURS = {
@@ -119,11 +125,32 @@ def _today_est() -> date:
     return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
 
 
+def _load_single_year_sweep(option: str, year: int) -> dict:
+    """Load the most recent sweep file for a given option and year."""
+    try:
+        repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
+        token   = os.getenv("HF_TOKEN")
+        prefix = f"sweep/option_{option}/sweep_{year}_"
+        api = HfApi()
+        files = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
+        matches = [f for f in files if f.startswith(prefix) and f.endswith(".json")]
+        if not matches:
+            return {}
+        # Pick the most recent by date (the filename ends with YYYYMMDD)
+        matches.sort(reverse=True)
+        latest = matches[0]
+        path = hf_hub_download(repo_id=repo_id, filename=latest,
+                               repo_type="dataset", token=token, force_download=True)
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 def _load_sweep_cache(for_date: date, option: str) -> dict:
-    """Load date-stamped sweep files from HF Dataset subdirectory."""
+    """Load all sweep files for a given date (used by consensus tab)."""
     cache = {}
     try:
-        from huggingface_hub import hf_hub_download, HfApi
         token   = os.getenv("HF_TOKEN")
         repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
         date_tag = for_date.strftime("%Y%m%d")
@@ -148,15 +175,14 @@ def _load_sweep_cache(for_date: date, option: str) -> dict:
 
 
 def _load_sweep_cache_any(option: str) -> tuple:
-    """Load most recent sweep files from HF Dataset regardless of date."""
+    """Load the most recent full set of sweep files (all years)."""
     found, best_date = {}, None
     try:
-        from huggingface_hub import HfApi, hf_hub_download
         token   = os.getenv("HF_TOKEN")
         repo_id = os.getenv("HF_DATASET_REPO", "P2SAMAPA/P2-ETF-DQN-ENGINE-DATASET")
-        api     = HfApi()
+        api = HfApi()
         prefix = f"sweep/option_{option}/sweep_"
-        files   = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
+        files = list(api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token))
         for fname in files:
             if not fname.startswith(prefix):
                 continue
@@ -255,17 +281,15 @@ with st.sidebar:
     st.divider()
     st.markdown("### 📅 Training Parameters")
     st.caption("Changes here require retraining via GitHub Actions.")
+    start_year = st.slider("Start Year", config.DEFAULT_START_YEAR, 2024, 2015, key=f"start_{opt_code}")
 
-    start_year = st.slider("Start Year", config.DEFAULT_START_YEAR,
-                           2024, 2015, key=f"start_{opt_code}")
-    fee_bps    = st.number_input("T-Costs (bps)", 0, 50, 10, key=f"fee_{opt_code}")
-
+    # Remove the risk sliders; they are now hardcoded.
+    # Instead, display the fixed values.
     st.divider()
-    st.markdown("### 🛡️ Risk Controls")
-    st.caption("Instant — no retraining needed.")
-
-    tsl_pct   = st.slider("Trailing Stop Loss (%)", 5.0, 25.0, 10.0, 0.5, key=f"tsl_{opt_code}")
-    z_reentry = st.slider("Re-entry Z-Score Threshold", 0.5, 3.0, 1.1, 0.1, key=f"z_{opt_code}")
+    st.markdown("### 🛡️ Fixed Risk Controls")
+    st.caption(f"Transaction Cost: {FIXED_FEE_BPS} bps")
+    st.caption(f"Trailing Stop Loss: {FIXED_TSL_PCT}%")
+    st.caption(f"Z-Score Re‑entry: {FIXED_Z_REENTRY}")
 
     st.divider()
     run_btn = st.button("🚀 Retrain DQN Agent",
@@ -273,12 +297,12 @@ with st.sidebar:
                         use_container_width=True)
 
     if run_btn:
-        triggered = _trigger_github(start_year, fee_bps, tsl_pct, z_reentry, sweep_mode="")
+        triggered = _trigger_github(start_year, FIXED_FEE_BPS, FIXED_TSL_PCT, FIXED_Z_REENTRY, sweep_mode="")
         if triggered:
             st.success(
                 f"✅ Training triggered!\n\n"
                 f"Training from **{start_year}** · 200 episodes · "
-                f"**{fee_bps}bps** fees\n\n"
+                f"**{FIXED_FEE_BPS}bps** fees\n\n"
                 f"Results update here in ~50–65 min."
             )
         else:
@@ -293,7 +317,8 @@ with st.sidebar:
     st.caption(f"↑ Trains from {start_year} onwards · 200 episodes (hardcoded in train_models.yml)")
 
 
-# ── Load outputs for selected option ──────────────────────────────────────────
+# ── Load outputs for selected option (last prediction/evaluation) ────────────
+# These are used for the hero banner, not for the single‑year tab.
 pred_file = f"latest_prediction_{opt_code}.json"
 eval_file = f"evaluation_results_{opt_code}.json"
 pred  = _load_json(pred_file)
@@ -330,229 +355,76 @@ tab1, tab2 = st.tabs(["📊 Single-Year Results", "🔄 Multi-Year Consensus Swe
 # TAB 1 — Single-Year Results
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    if trained_from_year and trained_at:
-        trained_date = trained_at[:10]
-        st.markdown(
-            f'<div class="provenance">📋 Active model trained from '
-            f'<b>{trained_from_year}</b> · Generated <b>{trained_date}</b> · '
-            f'Val Sharpe <b>{evalu.get("sharpe", "—")}</b></div>',
-            unsafe_allow_html=True
-        )
+    st.subheader(f"Single‑Year Results — {option}")
+    # Let the user select a start year to view
+    view_year = st.selectbox(
+        "Select start year to view:",
+        options=list(range(2008, 2026)),
+        index=len(range(2008, 2026))-1,  # last year (2025)
+        key=f"view_year_{opt_code}"
+    )
+
+    # Load the sweep file for that year and option
+    year_data = _load_single_year_sweep(opt_code, view_year)
+    if not year_data:
+        st.info(f"No sweep results found for year {view_year}. Run the consensus sweep first.")
     else:
-        st.info("⚠️ No trained model found. Click **🚀 Retrain DQN Agent** to train.")
+        # Extract metrics
+        signal = year_data.get("signal", "?")
+        ann_return = year_data.get("ann_return", 0.0)
+        z_score_yr = year_data.get("z_score", 0.0)
+        sharpe = year_data.get("sharpe", 0.0)
+        max_dd = year_data.get("max_dd", 0.0)
+        conviction = year_data.get("conviction", "?")
+        lookback = year_data.get("lookback", "?")
+        sweep_date = year_data.get("sweep_date", "?")
+        if isinstance(sweep_date, str):
+            sweep_date = sweep_date[:4] + "-" + sweep_date[4:6] + "-" + sweep_date[6:]
 
-    st.markdown("---")
-
-    if tsl_triggered:
         st.markdown(f"""
-        <div style="background:#fff8f0;border:2px solid #cc6600;border-radius:10px;
-                    padding:16px;margin-bottom:16px;">
-          🔴 <b>TRAILING STOP LOSS TRIGGERED</b> — 2-day return
-          ({float(two_day_ret):+.1f}%) breached −{tsl_pct:.0f}% threshold.
-          Holding CASH @ {tbill_rt:.2f}% T-bill until Z ≥ {z_reentry:.1f}σ.
-        </div>""", unsafe_allow_html=True)
-
-    now_est  = datetime.utcnow() - timedelta(hours=5)
-    is_today = (next_td == now_est.date())
-    td_label = "TODAY'S SIGNAL" if is_today else "NEXT TRADING DAY"
-
-    if in_cash or not pred:
-        st.markdown(f"""
-        <div class="cash-card" style="background: linear-gradient(135deg, #fff8f0 0%, #ffe4cc 100%); border: 2px solid #cc6600; border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px;">
-          <div class="hero-label">⚠️ Risk Override Active · {td_label}</div>
-          <div class="hero-value" style="color:#cc6600;">💵 CASH</div>
-          <div class="hero-sub">
-            Earning 3m T-bill: <b>{tbill_rt:.2f}% p.a.</b> &nbsp;|&nbsp;
-            Re-entry when Z ≥ {z_reentry:.1f}σ
+        <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);
+                    border:2px solid #0066cc;border-radius:16px;
+                    padding:32px;text-align:center;margin:16px 0;">
+          <div style="font-size:11px;letter-spacing:3px;color:#aaa;margin-bottom:8px;">
+            DQN MODEL · START YEAR {view_year} · RESULTS FROM {sweep_date}
           </div>
-        </div>""", unsafe_allow_html=True)
-    else:
-        prov_str = ""
-        if trained_from_year and trained_at:
-            prov_str = (f"📋 Trained from {trained_from_year} · "
-                        f"Generated {trained_at[:10]} · Z-Score {z_score:.2f}σ")
-        st.markdown(f"""
-        <div class="hero-card" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #0066cc; border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px;">
-          <div class="hero-label">Dueling DQN · {td_label}</div>
-          <div class="hero-value" style="color:#0066cc;">{final_signal}</div>
-          <div class="hero-sub">
-            🎯 {next_td} &nbsp;|&nbsp; Confidence {float(confidence):.1%}
-            &nbsp;|&nbsp; Z-Score {float(z_score):.2f}σ
+          <div style="font-size:72px;font-weight:900;color:#0066cc;">
+            {signal}
           </div>
-          {"<div class='hero-sub' style='margin-top:6px;font-size:12px;opacity:0.7;'>" + prov_str + "</div>" if prov_str else ""}
-        </div>""", unsafe_allow_html=True)
+          <div style="font-size:14px;color:#ccc;margin-top:8px;">
+            Conviction: {conviction} · Lookback: {lookback}d
+          </div>
+          <div style="display:flex;justify-content:center;gap:32px;margin-top:20px;flex-wrap:wrap;">
+            <div style="text-align:center;">
+              <div style="font-size:11px;color:#aaa;">Ann. Return</div>
+              <div style="font-size:22px;font-weight:700;color:{'#00b894' if ann_return>0 else '#d63031'}">
+                {ann_return*100:.1f}%</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:11px;color:#aaa;">Z-Score</div>
+              <div style="font-size:22px;font-weight:700;color:#74b9ff;">{z_score_yr:.2f}σ</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:11px;color:#aaa;">Sharpe</div>
+              <div style="font-size:22px;font-weight:700;color:#a29bfe;">{sharpe:.2f}</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:11px;color:#aaa;">Max Drawdown</div>
+              <div style="font-size:22px;font-weight:700;color:#fd79a8;">{max_dd*100:.1f}%</div>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if evalu:
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Ann. Return",   f"{evalu.get('ann_return', 0):.1%}")
-        c2.metric("Sharpe Ratio",  f"{evalu.get('sharpe', 0):.2f}")
-        c3.metric("Max Drawdown",  f"{evalu.get('max_drawdown', 0):.1%}")
-        c4.metric("Calmar Ratio",  f"{evalu.get('calmar', 0):.2f}")
-        c5.metric("Hit Ratio",     f"{evalu.get('hit_ratio', 0):.1%}")
+        # Note about missing equity curve / allocation
+        st.info("📈 For full backtest details (equity curve, allocations, trade log), please refer to the **Multi‑Year Consensus Sweep** tab, which aggregates all years. The single‑year view shows the summary metrics from the sweep results.")
 
-        bench_ann = evalu.get("benchmark_ann", {})
-        if bench_ann:
-            bc1, bc2  = st.columns(2)
-            strat_ann = evalu.get("ann_return", 0)
-            for col, (k, v) in zip([bc1, bc2], bench_ann.items()):
-                delta = strat_ann - v
-                col.metric(f"{k} Ann. Return", f"{v:.1%}",
-                           delta=f"{delta:+.1%} vs strategy")
+        # Optionally display a bar chart of Q-values? Not available in sweep file.
+        # We'll skip the extra charts for now.
 
+    # Optionally, display a disclaimer about fixed parameters
     st.markdown("---")
-
-    if probs:
-        st.subheader("📊 Action Probabilities (Softmax Q-Values)")
-        actions = list(probs.keys())
-        values  = [probs[a] for a in actions]
-        colours = ["#cc6600" if a == "CASH" else
-                   "#0066cc" if a == final_signal else "#6c757d"
-                   for a in actions]
-
-        fig = go.Figure(go.Bar(
-            x=actions, y=values,
-            marker_color=colours,
-            text=[f"{v:.1%}" for v in values],
-            textposition="outside",
-        ))
-        fig.update_layout(
-            paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
-            font_color="#1a1a1a",
-            yaxis_title="Probability", xaxis_title="Action",
-            height=300, margin=dict(t=20, b=20),
-            yaxis=dict(gridcolor="#e9ecef"),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption(
-            "**How to read:** Each bar is the agent's probability of choosing that action today, "
-            "derived from softmax of the DQN Q-values. 🔵 Blue = chosen action. 🟠 Orange = CASH. "
-            "Grey = rejected. A dominant bar = high conviction. Similar-height bars = low conviction / uncertain signal."
-        )
-
-    if evalu and "equity_curve" in evalu:
-        st.subheader("📈 Test-Set Equity Curve vs Benchmarks")
-        equity     = evalu["equity_curve"]
-        test_dates = evalu.get("test_dates", [])
-        x_axis     = test_dates if len(test_dates) == len(equity) else list(range(len(equity)))
-
-        fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(
-            x=x_axis, y=equity, mode="lines", name="DQN Strategy",
-            line=dict(color="#0066cc", width=2.5),
-        ))
-
-        bench_equity = evalu.get("benchmark_equity", {})
-        bench_colours = {"SPY": "#e63946", "AGG": "#2a9d8f"}
-        for b, beq in bench_equity.items():
-            bx = test_dates if len(test_dates) == len(beq) else list(range(len(beq)))
-            fig2.add_trace(go.Scatter(
-                x=bx, y=beq, mode="lines", name=b,
-                line=dict(width=1.5, dash="dot", color=bench_colours.get(b, "#888888")),
-            ))
-
-        fig2.update_layout(
-            paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
-            font_color="#1a1a1a", height=420,
-            yaxis_title="Normalised Equity (start = 1.0)",
-            xaxis_title="Date",
-            legend=dict(bgcolor="#f8f9fa", orientation="h",
-                        yanchor="bottom", y=1.02, xanchor="left", x=0),
-            yaxis=dict(gridcolor="#e9ecef", tickformat=".2f"),
-            xaxis=dict(tickangle=-45, nticks=12, gridcolor="#e9ecef"),
-            margin=dict(t=40, b=60),
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-
-    if evalu and "allocation_pct" in evalu:
-        st.subheader("📊 Allocation Breakdown (Test Set)")
-        alloc = evalu["allocation_pct"]
-        colour_map = get_colour_map(opt_code)
-        fig3  = go.Figure(go.Pie(
-            labels=list(alloc.keys()),
-            values=list(alloc.values()),
-            hole=0.45,
-            marker_colors=[colour_map.get(e, "#888") for e in alloc.keys()],
-        ))
-        fig3.update_layout(
-            paper_bgcolor="#ffffff", font_color="#1a1a1a",
-            height=320, margin=dict(t=20),
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-        st.caption(
-            "**How to read:** Percentage of out-of-sample (OOS) test days the agent held each position. "
-            "A well-trained agent rotates across ETFs. Heavy concentration in one slice (80%+) = "
-            "agent defaulted to a single-asset strategy — sign of poor learning."
-        )
-
-    st.markdown("---")
-
-    if evalu and "allocations" in evalu and len(evalu["allocations"]) > 0:
-        st.subheader("🗓️ 15-Day Audit Trail — Most Recent OOS Days")
-        st.caption("Last 15 trading days from the out-of-sample test period.")
-
-        allocs     = evalu["allocations"]
-        eq_curve   = evalu.get("equity_curve", [])
-        test_dates = evalu.get("test_dates", [])
-
-        daily_rets = []
-        if len(eq_curve) > 1:
-            for i in range(1, len(eq_curve)):
-                daily_rets.append(eq_curve[i] / eq_curve[i-1] - 1)
-
-        n_show      = min(15, len(allocs))
-        last_allocs = allocs[-n_show:]
-        last_rets   = daily_rets[-n_show:]   if daily_rets   else [0.0] * n_show
-        last_equity = eq_curve[-n_show:]     if eq_curve     else [1.0] * n_show
-        last_dates  = test_dates[-n_show:]   if len(test_dates) >= n_show else [f"Day {i+1}" for i in range(n_show)]
-
-        audit_df = pd.DataFrame({
-            "Date"      : last_dates,
-            "Allocation": last_allocs,
-            "Daily Ret" : last_rets,
-            "Equity"    : last_equity,
-        })
-
-        def _colour_ret(val):
-            color = "#d93025" if val < 0 else "#188038"
-            return f"color: {color}; font-weight: bold"
-
-        styled = (
-            audit_df.style
-            .format({"Daily Ret": "{:+.2%}", "Equity": "{:.4f}"})
-            .applymap(_colour_ret, subset=["Daily Ret"])
-            .set_properties(**{"text-align": "center"})
-            .hide(axis="index")
-        )
-        st.dataframe(styled, use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🧠 Methodology")
-    st.markdown("""
-    **Dueling DQN** for ETF rotation, extending **Yasin & Gill (2024)**.
-
-    - **Multi-asset action space** – CASH + 7 ETFs (Option A) or 12 ETFs (Option B)  
-    - **Macro state augmentation** – VIX, yield curve slope, T-bill rate, USD index, credit spreads  
-    - **Reward** = excess daily return over T-bill, minus transaction cost, scaled by inverse realised volatility  
-    - **Training** – 80/10/10 train/val/test split; best model selected by validation Sharpe; Double DQN; experience replay; ε‑greedy decay  
-    - **Risk controls** – trailing stop loss (overrides to CASH) + Z‑score re‑entry threshold  
-
-    📄 **References**  
-    - Yasin, A.S. & Gill, P.S. (2024). *Reinforcement Learning Framework for Quantitative Trading*. [arXiv:2411.07585](https://arxiv.org/abs/2411.07585)  
-    - Wang, Z. et al. (2016). *Dueling Network Architectures for Deep Reinforcement Learning*. ICML 2016.
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;
-                padding:14px;font-size:12px;color:#6c757d;margin-top:8px;">
-    <b>Reference:</b> Yasin, A.S. & Gill, P.S. (2024).
-    <i>Reinforcement Learning Framework for Quantitative Trading.</i>
-    arXiv:2411.07585 [q-fin.TR]. Accepted at ICAIF 2024 FM4TS Workshop.
-    &nbsp;·&nbsp;
-    <b>Dueling DQN:</b> Wang, Z. et al. (2016).
-    <i>Dueling Network Architectures for Deep Reinforcement Learning.</i>
-    ICML 2016.
-    </div>
-    """, unsafe_allow_html=True)
+    st.caption(f"Performance shown uses fixed risk parameters: fee {FIXED_FEE_BPS} bps, TSL {FIXED_TSL_PCT}%, Z re‑entry {FIXED_Z_REENTRY}.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -566,7 +438,6 @@ with tab2:
         f"**Weighted score** = 40% Ann. Return + 20% Z-Score + 20% Sharpe + 20% (–MaxDD), min‑max normalised."
     )
 
-    # Load the most recent sweep results from HF (subdirectory)
     sweep_data, sweep_date = _load_sweep_cache_any(opt_code)
     if not sweep_data:
         st.info("No sweep results found. They will be generated after the next daily run.")
@@ -574,7 +445,6 @@ with tab2:
 
     st.caption(f"Results date: {sweep_date}")
 
-    # Compute consensus
     consensus = _compute_consensus(sweep_data)
     if not consensus:
         st.warning("Could not compute consensus from sweep data.")
@@ -589,7 +459,6 @@ with tab2:
     sig_label = "⚠️ Split Signal" if split_sig else "✅ Clear Signal"
     note      = f"Score share {score_pct:.0f}% · {w_info['n_years']} years · avg score {w_info['cum_score']:.4f}"
 
-    # Winner banner
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);
                 border:2px solid {win_color};border-radius:16px;
@@ -625,7 +494,6 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
 
-    # Also-ranked
     others = sorted([(e, v) for e, v in consensus["etf_summary"].items() if e != winner],
                     key=lambda x: -x[1]["cum_score"])
     parts = []
@@ -640,9 +508,7 @@ with tab2:
     )
     st.divider()
 
-    # ── Charts ────────────────────────────────────────────────────────────────
     c1, c2 = st.columns(2)
-
     with c1:
         st.markdown("**Weighted Score per ETF**")
         es = consensus["etf_summary"]
@@ -689,7 +555,6 @@ with tab2:
         )
         st.plotly_chart(fig_sc, use_container_width=True)
 
-    # ── Per-year breakdown table ──────────────────────────────────────────────
     st.subheader("📋 Full Per-Year Breakdown")
     st.caption(
         "**Wtd Score** = 40% Ann. Return + 20% Z-Score + 20% Sharpe + 20% (–Max DD), "
@@ -738,7 +603,6 @@ with tab2:
                   ]))
     st.dataframe(styled_tbl, use_container_width=True, height=280)
 
-    # ── How to read ───────────────────────────────────────────────────────────
     st.divider()
     st.subheader("📖 How to Read These Results")
     st.markdown(f"""

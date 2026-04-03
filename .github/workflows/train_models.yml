@@ -9,7 +9,7 @@ on:
       start_year:
         description: "Training data start year (e.g. 2015)"
         required: false
-        default: "2015"
+        default: "2008"
       fee_bps:
         description: "Transaction fee in basis points"
         required: false

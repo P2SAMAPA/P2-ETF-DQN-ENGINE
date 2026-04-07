@@ -1,0 +1,12 @@
+{
+  "signal": "CASH",
+  "top_held": "CASH",
+  "ann_return": 0.054377,
+  "z_score": 1.0149,
+  "sharpe": 0.1892,
+  "max_dd": -0.154995,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2008,
+  "sweep_date": "20260407"
+}

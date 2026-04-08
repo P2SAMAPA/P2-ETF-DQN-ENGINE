@@ -1,0 +1,12 @@
+{
+  "signal": "QQQ",
+  "top_held": "QQQ",
+  "ann_return": 0.239046,
+  "z_score": 1.241,
+  "sharpe": 0.7601,
+  "max_dd": -0.197272,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260408"
+}

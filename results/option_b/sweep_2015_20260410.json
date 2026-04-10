@@ -1,0 +1,12 @@
+{
+  "signal": "XLE",
+  "top_held": "XLE",
+  "ann_return": 0.230332,
+  "z_score": 2.332,
+  "sharpe": 0.8334,
+  "max_dd": -0.181646,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260410"
+}

@@ -1,0 +1,12 @@
+{
+  "signal": "GDX",
+  "top_held": "GDX",
+  "ann_return": 0.368727,
+  "z_score": 2.3623,
+  "sharpe": 1.3258,
+  "max_dd": -0.123239,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260414"
+}

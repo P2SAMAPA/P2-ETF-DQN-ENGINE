@@ -20,7 +20,7 @@ ETFS            = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "GLD", "SLV"]
 # Option B (new) – Equity Sectors
 OPTION_B_ETFS   = [
     "SPY", "QQQ", "XLK", "XLF", "XLE", "XLV",
-    "XLI", "XLY", "XLP", "XLU", "GDX", "XLB", "XLRE", "XME"
+    "XLI", "XLY", "XLP", "XLU", "GDX", "XLB", "XLRE", "XME", "IWM", "IWF", "XSD", "XBI"
 ]
 
 # Benchmarks (common)

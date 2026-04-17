@@ -1,6 +1,6 @@
 {
   "option": "b",
-  "as_of_date": "2026-04-16",
+  "as_of_date": "2026-04-17",
   "final_signal": "CASH",
   "final_confidence": NaN,
   "z_score": NaN,
@@ -46,6 +46,6 @@
     "z_reentry": 1.1,
     "tsl_pct": 10.0
   },
-  "trained_from_year": 2008,
-  "trained_at": "2026-04-16T04:29:45.215707"
+  "trained_from_year": 2015,
+  "trained_at": "2026-04-17T10:32:35.666277"
 }

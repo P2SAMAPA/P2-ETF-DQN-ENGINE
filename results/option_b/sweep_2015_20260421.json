@@ -1,0 +1,12 @@
+{
+  "signal": "XME",
+  "top_held": "XME",
+  "ann_return": 0.499764,
+  "z_score": 2.5119,
+  "sharpe": 1.3379,
+  "max_dd": -0.18606,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260421"
+}

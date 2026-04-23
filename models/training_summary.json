@@ -1,199 +1,199 @@
 {
   "option": "a",
-  "start_year": 2018,
-  "n_episodes": 280,
+  "start_year": 2008,
+  "n_episodes": 150,
   "fee_bps": 10,
   "lookback": 20,
   "state_size": 3048,
   "n_features": 152,
   "n_etfs": 7,
-  "trained_at": "2026-04-22T08:00:49.258976",
-  "best_val_sharpe": 1.857,
-  "test_sharpe": 1.1444,
-  "test_equity": 1.2167,
-  "train_days": 1648,
-  "val_days": 188,
-  "test_days": 190,
+  "trained_at": "2026-04-23T02:33:02.601575",
+  "best_val_sharpe": 0.2794,
+  "test_sharpe": -0.4565,
+  "test_equity": 0.9615,
+  "train_days": 3652,
+  "val_days": 439,
+  "test_days": 440,
   "history": [
     {
-      "episode": 261,
-      "train_sharpe": 11.634,
-      "train_equity": 4067.3613,
-      "val_sharpe": -1.844,
-      "val_equity": 0.877,
-      "avg_loss": 9.3e-05,
-      "epsilon": 0.2149
-    },
-    {
-      "episode": 262,
-      "train_sharpe": 9.367,
-      "train_equity": 385.1037,
-      "val_sharpe": -1.485,
-      "val_equity": 0.8543,
-      "avg_loss": 0.0001,
-      "epsilon": 0.2127
-    },
-    {
-      "episode": 263,
-      "train_sharpe": 11.219,
-      "train_equity": 1218.7977,
-      "val_sharpe": 0.45,
-      "val_equity": 1.147,
-      "avg_loss": 9.7e-05,
-      "epsilon": 0.2103
-    },
-    {
-      "episode": 264,
-      "train_sharpe": 12.318,
-      "train_equity": 70493.5295,
-      "val_sharpe": -0.047,
-      "val_equity": 1.1031,
-      "avg_loss": 9.7e-05,
-      "epsilon": 0.2069
-    },
-    {
-      "episode": 265,
-      "train_sharpe": 11.591,
-      "train_equity": 40835.0165,
-      "val_sharpe": -1.776,
-      "val_equity": 0.9294,
-      "avg_loss": 9.6e-05,
-      "epsilon": 0.2036
-    },
-    {
-      "episode": 266,
-      "train_sharpe": 11.314,
-      "train_equity": 711.707,
-      "val_sharpe": -1.403,
-      "val_equity": 0.9774,
-      "avg_loss": 0.000103,
-      "epsilon": 0.2014
-    },
-    {
-      "episode": 267,
-      "train_sharpe": 11.55,
-      "train_equity": 599.5404,
-      "val_sharpe": -1.747,
-      "val_equity": 0.9291,
-      "avg_loss": 9.6e-05,
-      "epsilon": 0.1992
-    },
-    {
-      "episode": 268,
-      "train_sharpe": 11.584,
-      "train_equity": 45046.0911,
-      "val_sharpe": -1.758,
-      "val_equity": 0.8956,
-      "avg_loss": 8.9e-05,
-      "epsilon": 0.1958
-    },
-    {
-      "episode": 269,
-      "train_sharpe": 11.961,
-      "train_equity": 97846.8987,
-      "val_sharpe": -0.697,
-      "val_equity": 1.0618,
-      "avg_loss": 0.000102,
-      "epsilon": 0.1921
-    },
-    {
-      "episode": 270,
-      "train_sharpe": 11.344,
-      "train_equity": 26213.5793,
-      "val_sharpe": -1.466,
-      "val_equity": 0.8855,
-      "avg_loss": 9.1e-05,
-      "epsilon": 0.1889
-    },
-    {
-      "episode": 271,
-      "train_sharpe": 11.582,
-      "train_equity": 63743.5389,
-      "val_sharpe": -1.838,
-      "val_equity": 0.8816,
-      "avg_loss": 9.7e-05,
-      "epsilon": 0.1854
-    },
-    {
-      "episode": 272,
-      "train_sharpe": 11.407,
-      "train_equity": 4456.644,
-      "val_sharpe": -1.12,
-      "val_equity": 1.0415,
-      "avg_loss": 9.1e-05,
-      "epsilon": 0.1827
-    },
-    {
-      "episode": 273,
-      "train_sharpe": 12.185,
-      "train_equity": 60940.1817,
-      "val_sharpe": -0.687,
-      "val_equity": 1.0476,
-      "avg_loss": 9e-05,
-      "epsilon": 0.1792
-    },
-    {
-      "episode": 274,
-      "train_sharpe": 10.242,
-      "train_equity": 300.9251,
-      "val_sharpe": -0.959,
+      "episode": 131,
+      "train_sharpe": NaN,
+      "train_equity": NaN,
+      "val_sharpe": 0.0,
       "val_equity": 1.0405,
-      "avg_loss": 9.2e-05,
-      "epsilon": 0.1772
+      "avg_loss": 0.0,
+      "epsilon": 0.2632
     },
     {
-      "episode": 275,
-      "train_sharpe": 11.195,
-      "train_equity": 34526.2627,
-      "val_sharpe": -1.498,
-      "val_equity": 0.9615,
-      "avg_loss": 8.7e-05,
-      "epsilon": 0.1741
+      "episode": 132,
+      "train_sharpe": NaN,
+      "train_equity": NaN,
+      "val_sharpe": 0.0,
+      "val_equity": 1.041,
+      "avg_loss": 0.0,
+      "epsilon": 0.256
     },
     {
-      "episode": 276,
-      "train_sharpe": 12.338,
-      "train_equity": 93850.1026,
-      "val_sharpe": -0.005,
-      "val_equity": 1.0931,
-      "avg_loss": 9.2e-05,
-      "epsilon": 0.1707
+      "episode": 133,
+      "train_sharpe": -2.853,
+      "train_equity": 0.3855,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0322,
+      "avg_loss": 0.0,
+      "epsilon": 0.2496
     },
     {
-      "episode": 277,
-      "train_sharpe": 12.271,
-      "train_equity": 99235.8137,
-      "val_sharpe": -1.777,
-      "val_equity": 0.8525,
-      "avg_loss": 8.8e-05,
-      "epsilon": 0.1672
+      "episode": 134,
+      "train_sharpe": -2.772,
+      "train_equity": 0.4784,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0637,
+      "avg_loss": 0.0,
+      "epsilon": 0.2435
     },
     {
-      "episode": 278,
-      "train_sharpe": 12.523,
-      "train_equity": 182771.9575,
-      "val_sharpe": -2.011,
-      "val_equity": 0.8481,
-      "avg_loss": 8.8e-05,
-      "epsilon": 0.1634
+      "episode": 135,
+      "train_sharpe": -2.864,
+      "train_equity": 0.5816,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0463,
+      "avg_loss": 0.0,
+      "epsilon": 0.2391
     },
     {
-      "episode": 279,
-      "train_sharpe": 12.752,
-      "train_equity": 240499.9762,
-      "val_sharpe": -1.806,
-      "val_equity": 0.898,
-      "avg_loss": 8.6e-05,
-      "epsilon": 0.1597
+      "episode": 136,
+      "train_sharpe": NaN,
+      "train_equity": NaN,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0505,
+      "avg_loss": 0.0,
+      "epsilon": 0.2324
     },
     {
-      "episode": 280,
-      "train_sharpe": 11.887,
-      "train_equity": 1683.9147,
-      "val_sharpe": -0.881,
-      "val_equity": 1.0149,
-      "avg_loss": 8.7e-05,
-      "epsilon": 0.1573
+      "episode": 137,
+      "train_sharpe": -2.959,
+      "train_equity": 0.3822,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0364,
+      "avg_loss": 0.0,
+      "epsilon": 0.2268
+    },
+    {
+      "episode": 138,
+      "train_sharpe": -2.615,
+      "train_equity": 0.4791,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0372,
+      "avg_loss": 0.0,
+      "epsilon": 0.2219
+    },
+    {
+      "episode": 139,
+      "train_sharpe": -2.333,
+      "train_equity": 0.5169,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0359,
+      "avg_loss": 0.0,
+      "epsilon": 0.2172
+    },
+    {
+      "episode": 140,
+      "train_sharpe": NaN,
+      "train_equity": NaN,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0523,
+      "avg_loss": 0.0,
+      "epsilon": 0.2102
+    },
+    {
+      "episode": 141,
+      "train_sharpe": -2.974,
+      "train_equity": 0.4104,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0411,
+      "avg_loss": 0.0,
+      "epsilon": 0.2043
+    },
+    {
+      "episode": 142,
+      "train_sharpe": -2.831,
+      "train_equity": 0.4761,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0511,
+      "avg_loss": 0.0,
+      "epsilon": 0.1998
+    },
+    {
+      "episode": 143,
+      "train_sharpe": -2.393,
+      "train_equity": 0.7767,
+      "val_sharpe": 0.0,
+      "val_equity": 1.055,
+      "avg_loss": 0.0,
+      "epsilon": 0.1936
+    },
+    {
+      "episode": 144,
+      "train_sharpe": -2.193,
+      "train_equity": 0.7418,
+      "val_sharpe": 0.0,
+      "val_equity": 1.046,
+      "avg_loss": 0.0,
+      "epsilon": 0.189
+    },
+    {
+      "episode": 145,
+      "train_sharpe": -2.687,
+      "train_equity": 0.4692,
+      "val_sharpe": 0.0,
+      "val_equity": 1.058,
+      "avg_loss": 0.0,
+      "epsilon": 0.1841
+    },
+    {
+      "episode": 146,
+      "train_sharpe": NaN,
+      "train_equity": NaN,
+      "val_sharpe": 0.0,
+      "val_equity": 1.046,
+      "avg_loss": 0.0,
+      "epsilon": 0.1768
+    },
+    {
+      "episode": 147,
+      "train_sharpe": -2.196,
+      "train_equity": 0.7882,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0596,
+      "avg_loss": 0.0,
+      "epsilon": 0.172
+    },
+    {
+      "episode": 148,
+      "train_sharpe": -2.031,
+      "train_equity": 0.7976,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0438,
+      "avg_loss": 0.0,
+      "epsilon": 0.1667
+    },
+    {
+      "episode": 149,
+      "train_sharpe": -2.626,
+      "train_equity": 0.5937,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0335,
+      "avg_loss": 0.0,
+      "epsilon": 0.1609
+    },
+    {
+      "episode": 150,
+      "train_sharpe": NaN,
+      "train_equity": NaN,
+      "val_sharpe": 0.0,
+      "val_equity": 1.0353,
+      "avg_loss": 0.0,
+      "epsilon": 0.1542
     }
   ]
 }

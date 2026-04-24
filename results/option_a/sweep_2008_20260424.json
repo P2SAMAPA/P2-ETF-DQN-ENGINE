@@ -1,0 +1,12 @@
+{
+  "signal": "TLT",
+  "top_held": "TLT",
+  "ann_return": -0.049696,
+  "z_score": 1.6342,
+  "sharpe": -0.2801,
+  "max_dd": -0.183421,
+  "conviction": "High",
+  "lookback": 20,
+  "start_year": 2008,
+  "sweep_date": "20260424"
+}

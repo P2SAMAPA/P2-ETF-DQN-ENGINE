@@ -1,0 +1,12 @@
+{
+  "signal": "XLU",
+  "top_held": "XLU",
+  "ann_return": 0.154247,
+  "z_score": 2.3829,
+  "sharpe": 0.6346,
+  "max_dd": -0.044173,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2025,
+  "sweep_date": "20260425"
+}

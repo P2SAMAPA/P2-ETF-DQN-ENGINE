@@ -1,0 +1,12 @@
+{
+  "signal": "VNQ",
+  "top_held": "VNQ",
+  "ann_return": 0.23727,
+  "z_score": 1.4648,
+  "sharpe": 0.8346,
+  "max_dd": -0.270866,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2008,
+  "sweep_date": "20260428"
+}

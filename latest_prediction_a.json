@@ -2,27 +2,27 @@
   "option": "a",
   "as_of_date": "2026-05-05",
   "final_signal": "TLT",
-  "final_confidence": 0.3093,
-  "z_score": 1.97,
+  "final_confidence": 0.1769,
+  "z_score": 1.785,
   "q_values": {
-    "CASH": 4.1825,
-    "TLT": 4.3191,
-    "VCIT": 4.2467,
-    "LQD": 4.257,
-    "HYG": 4.1416,
-    "VNQ": 4.1735,
-    "GLD": 4.2044,
-    "SLV": 4.1747
+    "CASH": 1.1712,
+    "TLT": 1.2176,
+    "VCIT": 1.196,
+    "LQD": 1.2004,
+    "HYG": 1.1591,
+    "VNQ": 1.1526,
+    "GLD": 1.1764,
+    "SLV": 1.1722
   },
   "probabilities": {
-    "CASH": 0.0789,
-    "TLT": 0.3093,
-    "VCIT": 0.1499,
-    "LQD": 0.1662,
-    "HYG": 0.0524,
-    "VNQ": 0.0721,
-    "GLD": 0.0982,
-    "SLV": 0.073
+    "CASH": 0.1113,
+    "TLT": 0.1769,
+    "VCIT": 0.1426,
+    "LQD": 0.1489,
+    "HYG": 0.0985,
+    "VNQ": 0.0924,
+    "GLD": 0.1172,
+    "SLV": 0.1124
   },
   "tbill_rate": 3.59,
   "tsl_status": {
@@ -32,6 +32,6 @@
     "z_reentry": 1.1,
     "tsl_pct": 10.0
   },
-  "trained_from_year": 2010,
-  "trained_at": "2026-05-05T01:31:55.878249"
+  "trained_from_year": 2015,
+  "trained_at": "2026-05-05T08:33:29.531079"
 }

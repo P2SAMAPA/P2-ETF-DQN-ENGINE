@@ -1,0 +1,12 @@
+{
+  "signal": "XBI",
+  "top_held": "XBI",
+  "ann_return": 0.422494,
+  "z_score": 2.4806,
+  "sharpe": 1.4229,
+  "max_dd": -0.096629,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260515"
+}

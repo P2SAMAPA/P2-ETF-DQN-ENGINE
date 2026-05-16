@@ -1,0 +1,12 @@
+{
+  "signal": "LQD",
+  "top_held": "LQD",
+  "ann_return": 0.201894,
+  "z_score": 1.0996,
+  "sharpe": 0.6221,
+  "max_dd": -0.234506,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2019,
+  "sweep_date": "20260516"
+}

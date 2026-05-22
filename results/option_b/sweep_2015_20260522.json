@@ -1,0 +1,12 @@
+{
+  "signal": "XLB",
+  "top_held": "XLB",
+  "ann_return": 0.229387,
+  "z_score": 2.1678,
+  "sharpe": 0.8391,
+  "max_dd": -0.160614,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260522"
+}

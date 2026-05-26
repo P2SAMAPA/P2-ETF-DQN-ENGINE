@@ -1,0 +1,12 @@
+{
+  "signal": "GLD",
+  "top_held": "GLD",
+  "ann_return": 0.126466,
+  "z_score": 1.1176,
+  "sharpe": 0.5101,
+  "max_dd": -0.143694,
+  "conviction": "Moderate",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260526"
+}

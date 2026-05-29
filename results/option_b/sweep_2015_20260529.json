@@ -1,0 +1,12 @@
+{
+  "signal": "XLY",
+  "top_held": "XLY",
+  "ann_return": 1.006356,
+  "z_score": 1.9367,
+  "sharpe": 2.6168,
+  "max_dd": -0.152736,
+  "conviction": "High",
+  "lookback": 20,
+  "start_year": 2015,
+  "sweep_date": "20260529"
+}

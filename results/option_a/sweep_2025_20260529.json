@@ -1,0 +1,12 @@
+{
+  "signal": "SLV",
+  "top_held": "SLV",
+  "ann_return": 2.612852,
+  "z_score": 2.1564,
+  "sharpe": 4.1307,
+  "max_dd": -0.031949,
+  "conviction": "Very High",
+  "lookback": 20,
+  "start_year": 2025,
+  "sweep_date": "20260529"
+}
